@@ -10,7 +10,7 @@ def generate_display_id(
     transactions: list[Transaction],
 ) -> str:
     if not transactions:
-        return "1-0001"
+        return "T-0001"
     numbers = []
     for transaction in transactions:
         display_id = transaction.display_id
