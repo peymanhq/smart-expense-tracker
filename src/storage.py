@@ -10,6 +10,7 @@ from id_generator import (
     generate_display_id,
     parse_display_id,
 )
+from search import find_transaction_by_display_id
 from transaction import Transaction
 
 
@@ -138,16 +139,17 @@ def save_transactions(transactions: list[Transaction]) -> None:
     _write_document(document)
 
 
-def delete_transaction(transaction_id: str) -> bool:
-    transactions = load_transactions()
+def delete_transaction(display_id: str) -> bool:
+    document = _read_document()
+    transactions = _deserialize_transactions(document)
+    transaction = find_transaction_by_display_id(transactions, display_id)
+    if transaction is None:
+        return False
 
-    for transaction in transactions:
-        if transaction.display_id.upper() == transaction_id:
-            transactions.remove(transaction)
-            save_transactions(transactions)
-            return True
-
-    return False
+    transactions.remove(transaction)
+    document["transactions"] = [asdict(item) for item in transactions]
+    _write_document(document)
+    return True
 
 
 def update_transaction(
@@ -163,30 +165,3 @@ def update_transaction(
             return True
 
     return False
-
-
-def find_transaction_by_display_id(
-    transactions: list[Transaction],
-    display_id: str,
-) -> Transaction | None:
-    """
-    Find a transaction by its display ID.
-
-    Args:
-        display_id: Display ID (e.g. T-0001)
-        transactions: List of transactions
-
-    Returns:
-        Transaction if found, otherwise None.
-    """
-
-    display_id = display_id.strip().upper()
-
-    return next(
-        (
-            transaction
-            for transaction in transactions
-            if transaction.display_id.upper() == display_id
-        ),
-        None,
-    )
