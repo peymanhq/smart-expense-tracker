@@ -1,0 +1,212 @@
+# Smart Expense Tracker — Development Roadmap
+
+## Vision
+
+The goal of Smart Expense Tracker is to evolve from a simple command-line application into a professional personal finance management system.
+
+Development follows an incremental approach. Each version should improve the application while preserving existing functionality.
+
+---
+
+# Smart Expense Tracker v1.0.0
+
+## Status
+
+Release candidate — stabilization completed; publication is the immediate next
+step.
+
+## Objectives
+
+Build a stable command-line expense tracker with the core features required for personal finance management.
+
+## Features
+
+- Add income and expense transactions
+- View transactions
+- Search transactions
+- Filter transactions
+- Update transactions
+- Delete transactions
+- Financial reports
+- JSON persistence
+- Input validation
+- Internal UUID
+- User-facing Display ID
+- Modular project structure
+
+---
+
+# Version 1.1.0
+
+## Objectives
+
+Continue improving reliability and internal design after v1.0.0 is published.
+
+## Status
+
+Next planned development version
+
+## Planned Work
+
+- Application service layer
+- Repository abstraction
+- Replace `float` with `Decimal`
+- Better exception hierarchy
+- Improve dependency injection
+- Refactor `main.py`
+- Better project packaging
+- Continuous Integration (CI)
+
+---
+
+# Completed Version 1 Stabilization Work
+
+- Core command-line transaction workflows
+- Automated tests for version 1 with pytest
+- Controlled storage error handling
+- Display-ID reuse prevention
+- Search by display ID
+- Accurate update result handling
+- Safe atomic JSON persistence
+- Legacy JSON compatibility
+- README and release documentation updates
+
+---
+
+# Version 2.0
+
+## Objectives
+
+Replace JSON as the primary storage engine.
+
+## Planned Work
+
+- SQLite database
+- Data migration
+- Backup and restore
+- Repository implementation
+- Better search performance
+- Atomic transactions
+
+JSON will remain available as an import and export format.
+
+---
+
+# Version 2.1
+
+## Objectives
+
+Expand financial management capabilities.
+
+## Planned Work
+
+- Multiple accounts
+- Transfers between accounts
+- Opening balances
+- Categories management
+- Tags
+- Better filtering
+
+---
+
+# Version 2.2
+
+## Objectives
+
+Improve reporting.
+
+## Planned Work
+
+- Monthly reports
+- Spending analysis
+- Income analysis
+- Cash-flow reports
+- Charts
+- Financial dashboard
+
+---
+
+# Version 2.3
+
+## Objectives
+
+Excel integration.
+
+## Planned Work
+
+- Excel import
+- Excel export
+- Dashboard generation
+- Templates
+- Batch transaction import
+
+---
+
+# Version 2.4
+
+## Objectives
+
+Telegram integration.
+
+## Planned Work
+
+- Telegram Bot
+- Transaction entry from Telegram
+- Notifications
+- Quick balance lookup
+- Expense logging through chat
+
+Telegram should reuse the same validation and application services as the CLI.
+
+---
+
+# Version 2.5
+
+## Objectives
+
+Desktop application.
+
+## Planned Work
+
+- GUI
+- Forms
+- Tables
+- Charts
+- Dashboard
+- Settings
+
+---
+
+# Version 3.0
+
+## Objectives
+
+Professional finance platform.
+
+## Planned Work
+
+- Multiple currencies
+- Budget planning
+- Financial goals
+- Recurring transactions
+- Attachments
+- API
+- Cloud synchronization
+- Plugin architecture
+
+---
+
+# Guiding Principles
+
+Every version should:
+
+- Have a clear objective.
+- Deliver working software.
+- Preserve backward compatibility.
+- Improve maintainability.
+- Include documentation updates.
+- Include tests whenever possible.
+
+Large rewrites should be avoided.
+
+Development should remain incremental.
