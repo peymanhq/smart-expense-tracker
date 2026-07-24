@@ -1,6 +1,7 @@
 import json
 import os
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -126,6 +127,14 @@ def test_malformed_json_raises_without_changing_file() -> None:
     assert storage.DATA_FILE.read_text(encoding="utf-8") == malformed
 
 
+def test_invalid_utf8_raises_controlled_storage_error() -> None:
+    storage.DATA_FILE.parent.mkdir(parents=True)
+    storage.DATA_FILE.write_bytes(b"\xff")
+
+    with pytest.raises(StorageError, match="Could not read transaction data"):
+        storage.load_transactions()
+
+
 @pytest.mark.parametrize(
     "data",
     [
@@ -174,3 +183,19 @@ def test_failed_atomic_replace_preserves_previous_file(monkeypatch) -> None:
 
     assert storage.DATA_FILE.read_text(encoding="utf-8") == previous_content
     assert list(storage.DATA_FILE.parent.glob("*.tmp")) == []
+
+
+def test_directory_creation_failure_raises_controlled_storage_error(
+    monkeypatch,
+) -> None:
+    original_mkdir = Path.mkdir
+
+    def fail_data_directory(path, *args, **kwargs) -> None:
+        if path == storage.DATA_FILE.parent:
+            raise OSError("permission denied")
+        original_mkdir(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", fail_data_directory)
+
+    with pytest.raises(StorageError, match="Could not save transaction data"):
+        storage.save_transaction(make_transaction())

@@ -1,8 +1,11 @@
 import pytest
 
 from id_generator import (
+    calculate_next_account_display_id,
     calculate_next_display_id,
+    generate_account_display_id,
     generate_display_id,
+    parse_account_display_id,
     parse_display_id,
 )
 
@@ -21,3 +24,10 @@ def test_legacy_next_display_id_uses_highest_valid_id() -> None:
 def test_display_id_number_must_be_positive() -> None:
     with pytest.raises(ValueError, match="positive"):
         generate_display_id(0)
+
+
+def test_account_display_id_generation_parsing_and_sequence() -> None:
+    assert generate_account_display_id(1) == "A-0001"
+    assert parse_account_display_id(" a-0042 ") == 42
+    assert parse_account_display_id("T-0042") is None
+    assert calculate_next_account_display_id(["A-0002", "A-0007"]) == 8

@@ -1,8 +1,6 @@
 """JSON persistence for the Smart Expense Tracker."""
 
 import json
-import os
-import tempfile
 from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
@@ -12,15 +10,12 @@ from id_generator import (
     generate_display_id,
     parse_display_id,
 )
+from json_storage import StorageError, write_json_atomic
 from search import find_transaction_by_display_id
 from transaction import Transaction
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_FILE = BASE_DIR / "data" / "transactions.json"
-
-
-class StorageError(Exception):
-    """Raised when transaction data cannot be safely loaded or saved."""
 
 
 def _empty_document() -> dict[str, Any]:
@@ -72,7 +67,7 @@ def _read_document() -> dict[str, Any]:
 
     try:
         content = DATA_FILE.read_text(encoding="utf-8")
-    except OSError as error:
+    except (OSError, UnicodeError) as error:
         raise StorageError(f"Could not read transaction data: {error}") from error
 
     if not content.strip():
@@ -99,32 +94,7 @@ def _deserialize_transactions(document: dict[str, Any]) -> list[Transaction]:
 
 
 def _write_document(document: dict[str, Any]) -> None:
-    DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
-    temporary_path: Path | None = None
-
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=DATA_FILE.parent,
-            prefix=f".{DATA_FILE.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as temporary_file:
-            temporary_path = Path(temporary_file.name)
-            json.dump(document, temporary_file, indent=4)
-            temporary_file.write("\n")
-            temporary_file.flush()
-            os.fsync(temporary_file.fileno())
-
-        os.replace(temporary_path, DATA_FILE)
-    except (OSError, TypeError, ValueError) as error:
-        if temporary_path is not None:
-            try:
-                temporary_path.unlink(missing_ok=True)
-            except OSError:
-                pass
-        raise StorageError(f"Could not save transaction data: {error}") from error
+    write_json_atomic(DATA_FILE, document, data_name="transaction data")
 
 
 def get_next_display_id() -> str:

@@ -10,7 +10,7 @@ The long-term objective is to build a maintainable, testable, and extensible fin
 
 ---
 
-## Current Architecture (v1.0.0 Release Candidate)
+## Current Architecture (v1.1.0 Development)
 
 The current application follows this structure:
 
@@ -20,18 +20,20 @@ User
   ▼
 main.py
   │
+  ├── account_service.py
+  │     ├── account_storage.py
+  │     └── account.py
   ├── transaction_factory.py
   ├── validators.py
   ├── storage.py
   ├── report.py
   ├── search.py
   ├── formatter.py
-  │
-  ▼
-transaction.py
-  │
-  ▼
-transactions.json
+  ├── transaction.py
+  └── json_storage.py
+        │
+        ▼
+  accounts.json / transactions.json
 ```
 
 ### Module Responsibilities
@@ -39,17 +41,24 @@ transactions.json
 | Module | Responsibility |
 |---------|----------------|
 | `main.py` | CLI interaction and workflow orchestration |
+| `account.py` | Account data model |
+| `account_service.py` | Account validation and add, rename, deactivate, and activate rules |
+| `account_storage.py` | Validated, locked account persistence and legacy migration |
+| `json_storage.py` | Shared atomic JSON writing |
 | `transaction.py` | Transaction data model |
 | `transaction_factory.py` | Transaction creation |
 | `validators.py` | Input validation |
 | `storage.py` | JSON persistence |
-| `report.py` | Financial calculations |
-| `search.py` | Search and filtering |
+| `report.py` | Financial calculations and transaction filtering |
+| `search.py` | Transaction search and display-ID lookup |
 | `formatter.py` | Terminal formatting |
 | `id_generator.py` | UUID creation and display-ID formatting, parsing, and legacy-state calculation |
 
 `main.py` currently coordinates update and deletion workflows; there is no
 separate `update.py` module.
+
+Account workflows use a focused application-service module so their business
+rules remain independent of CLI input and output.
 
 ---
 
@@ -76,6 +85,20 @@ During an update, storage finds the current transaction again, preserves its
 internal UUID and display ID, and replaces only its editable data. The boolean
 update result is checked by the CLI so a missing transaction is not reported as
 successfully updated.
+
+### Account Management
+
+`account_service.py` validates account names, rejects duplicate active names,
+and coordinates add, rename, deactivate, and activate operations. Mutations
+return an explicit result containing success state, a user-facing message, and
+the affected account when applicable. Display-ID lookup normalizes whitespace,
+letter case, and numeric padding. Account names use NFC Unicode normalization
+plus case-insensitive comparison. Deactivation changes `is_active` while
+retaining the record and both identifiers; reactivation restores the same
+record unless it would create duplicate active names. Inactive names are
+intentionally reusable: a new account or inactive-account rename may match an
+active name, but the inactive account cannot be reactivated until the conflict
+is resolved.
 
 ---
 
@@ -118,16 +141,31 @@ and flushes the full document, calls `os.fsync`, and then uses `os.replace` for
 an atomic destination replacement. A failed write removes its temporary file
 and leaves the previous destination content unchanged.
 
+Accounts use a separate `data/accounts.json` document containing metadata and
+the account list. Keeping both sections in one atomic replacement prevents
+partial state/account saves. The persisted counter is checked against the
+highest stored display ID, so identifiers are not reused if the list later
+shrinks.
+
+The storage boundary validates required fields, canonical UUID and display-ID
+formats, boolean status, and uniqueness of internal IDs, display IDs, and
+active normalized names. Complete account read-modify-write workflows use a
+cross-process lock, preventing lost updates between application instances.
+The previous list-only account file and companion `accounts_state.json` remain
+readable and migrate on the next save. Accounts remain standalone and do not
+alter the v1.0 transaction JSON schema.
+
 ---
 
 ## Separation of Responsibilities
 
 The current version separates terminal interaction (`main.py`), validation
-(`validators.py`), transaction construction (`transaction_factory.py`), the
-domain record (`transaction.py`), lookup and search (`search.py`), reporting
-(`report.py`), formatting (`formatter.py`), and persistence (`storage.py`).
-`main.py` is still both the CLI and workflow coordinator; a distinct
-application-service layer remains future work.
+(`validators.py`), account operations (`account_service.py`), data records
+(`account.py` and `transaction.py`), transaction construction
+(`transaction_factory.py`), lookup and search (`search.py`), reporting
+(`report.py`), formatting (`formatter.py`), and persistence. `main.py` remains
+the transaction workflow coordinator, while Account Management introduces the
+first focused application-service boundary.
 
 ---
 
