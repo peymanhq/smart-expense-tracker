@@ -12,8 +12,7 @@ Development follows an incremental approach. Each version should improve the app
 
 ## Status
 
-Release candidate — stabilization completed; publication is the immediate next
-step.
+Published stable baseline.
 
 ## Objectives
 
@@ -44,7 +43,15 @@ Continue improving reliability and internal design after v1.0.0 is published.
 
 ## Status
 
-Next planned development version
+In development.
+
+## Implemented Work
+
+- Standalone Account Management
+- Add, view, rename, deactivate, and reactivate account workflows
+- Persistent account UUID and display-ID state
+- Atomic single-document account JSON persistence with legacy migration
+- Validated account schema and concurrent-writer locking
 
 ## Planned Work
 
@@ -56,6 +63,9 @@ Next planned development version
 - Refactor `main.py`
 - Better project packaging
 - Continuous Integration (CI)
+
+Account-to-transaction integration, categories, transfers, and Excel
+import/export remain outside the current Account Management phase.
 
 ---
 

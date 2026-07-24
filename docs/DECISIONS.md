@@ -385,3 +385,45 @@ Redirect `storage.DATA_FILE` to a pytest `tmp_path` for every storage test.
 
 Tests are isolated and repeatable, and `data/transactions.json` is protected.
 This requires storage configuration to be monkeypatched in the current design.
+
+---
+
+# ADR-015
+
+## Title
+
+Store standalone accounts separately with persistent display-ID state.
+
+## Status
+
+Accepted
+
+## Context
+
+Version 1.1.0 introduces Account Management without changing the v1.0
+transaction schema or linking transactions to managed accounts.
+
+## Decision
+
+Store account records and the next display-ID number together in one
+`data/accounts.json` document and use the shared atomic JSON writer. Validate
+account fields and uniqueness at the storage boundary and lock complete
+read-modify-write account operations across processes.
+
+Continue reading the earlier list-only account file and companion
+`accounts_state.json`, then migrate their safe next ID into the current
+single-document format on the next save.
+
+Keep account validation and mutation rules in `account_service.py`, separate
+from the passive `Account` dataclass and the CLI.
+
+## Consequences
+
+- Existing transaction data and behavior remain unchanged.
+- Deactivated accounts stay available for history and their IDs are not reused.
+- Deactivated accounts can be reactivated when no active name conflict exists.
+- Account changes and display-ID advancement succeed or fail as one file write.
+- Concurrent application instances do not silently overwrite account changes.
+- Malformed account records fail with controlled storage errors.
+- Account workflows can later be reused by interfaces other than the CLI.
+- Accounts and transactions remain intentionally unconnected in this phase.

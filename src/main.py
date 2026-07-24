@@ -1,5 +1,12 @@
 """Entry point for the Smart Expense Tracker application."""
 
+from account_service import (
+    activate_account,
+    add_account,
+    deactivate_account,
+    rename_account,
+)
+from account_storage import load_accounts
 from formatter import format_transactions
 from report import calculate_summary, filter_transactions
 from search import find_transaction_by_display_id, search_transactions
@@ -190,6 +197,79 @@ def handle_search() -> None:
     print(format_transactions(results))
 
 
+def handle_add_account() -> None:
+    result = add_account(input("Account name: "))
+    print(result.message)
+
+
+def handle_view_accounts() -> None:
+    accounts = load_accounts()
+    if not accounts:
+        print("No accounts found.")
+        return
+
+    for account in accounts:
+        status = "Active" if account.is_active else "Inactive"
+        print(f"{account.display_id} | {account.name} | {status}")
+
+
+def handle_rename_account() -> None:
+    display_id = input("Account display ID: ")
+    new_name = input("New account name: ")
+    result = rename_account(display_id, new_name)
+    print(result.message)
+
+
+def handle_deactivate_account() -> None:
+    display_id = input("Account display ID: ")
+    result = deactivate_account(display_id)
+    print(result.message)
+
+
+def handle_activate_account() -> None:
+    display_id = input("Account display ID: ")
+    result = activate_account(display_id)
+    print(result.message)
+
+
+def pause_account_management() -> None:
+    input("\nPress Enter to return to Account Management...")
+
+
+def account_management_menu() -> None:
+    actions = {
+        "1": handle_add_account,
+        "2": handle_view_accounts,
+        "3": handle_rename_account,
+        "4": handle_deactivate_account,
+        "5": handle_activate_account,
+    }
+
+    while True:
+        print("\n=== Account Management ===")
+        print("1. Add account")
+        print("2. View accounts")
+        print("3. Rename account")
+        print("4. Deactivate account")
+        print("5. Activate account")
+        print("6. Back")
+
+        choice = input("\n===>Choose an option: ")
+        if choice == "6":
+            return
+
+        action = actions.get(choice)
+        if action is None:
+            print("Invalid choice. Please try again.")
+            continue
+
+        try:
+            action()
+        except StorageError as error:
+            print(f"Storage error: {error}")
+        pause_account_management()
+
+
 """=================Menu dic========================"""
 MENU_ACTIONS = {
     "1": lambda: handle_add_transaction("income"),
@@ -200,6 +280,7 @@ MENU_ACTIONS = {
     "6": handle_delete_transaction,
     "7": handle_update_transaction,
     "8": handle_search,
+    "9": account_management_menu,
 }
 
 """=================Main fanection=================="""
@@ -221,6 +302,7 @@ def main() -> None:
         print("6. Delet Transaction")
         print("7. Update Transaction")
         print("8. search")
+        print("9. Account Management")
         print("0. Exit")
 
         choice = input("\n===>Choose an option: ")

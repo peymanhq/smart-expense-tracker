@@ -10,19 +10,33 @@ The format is based on **Keep a Changelog** and follows **Semantic Versioning**.
 
 ### Added
 
-- Future improvements will be listed here.
+- Standalone account creation, listing, renaming, deactivation, and reactivation
+- Internal account UUIDs and user-facing `A-0001` display IDs
+- Separate atomic JSON persistence for account records and display-ID state
+- Account Management CLI submenu
+- Focused automated coverage for account rules and persistence
 
 ### Changed
 
-- Future changes will be listed here.
+- Shared the atomic JSON writer between transaction and account persistence
+- Began v1.1.0 development from the published v1.0.0 baseline
+- Consolidated account records and display-ID metadata into one atomic document
+- Added automatic migration from legacy account-list and state files
+- Normalized account display-ID input and Unicode account names
+- Paused after account operations until the user returns to the submenu
 
 ### Fixed
 
-- Future bug fixes will be listed here.
+- Prevented inactive-account renames from triggering active-name conflicts
+- Prevented a failed account-state write from partially persisting account data
+- Prevented reactivation when it would create duplicate active account names
+- Prevented concurrent account operations from losing data or reusing IDs
+- Rejected malformed fields, invalid UUIDs, and duplicate account identifiers
+- Converted invalid UTF-8 and lock-setup failures into controlled storage errors
 
 ---
 
-## [1.0.0] - Unreleased
+## [1.0.0] - Released
 
 ### Added
 

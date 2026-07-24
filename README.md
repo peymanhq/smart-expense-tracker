@@ -6,16 +6,13 @@ workflows without requiring a database or external service.
 
 ## Version status
 
-The current release candidate is **Smart Expense Tracker v1.0.0**. Version 1
-stabilization is complete, and the project is ready for its first official
-release. It has not yet been published. The implemented scope is intentionally
-limited to the command-line and JSON features described below.
-
-The next planned development version is **v1.1.0**.
+**Smart Expense Tracker v1.0.0** is the published stable baseline. Development
+of **v1.1.0** is in progress, beginning with standalone Account Management.
 
 ## Features
 
 - Add income and expense transactions
+- Add, view, rename, deactivate, and reactivate accounts
 - View, search, and filter transactions
 - Update or delete a transaction by its display ID
 - Calculate total income, total expense, and current balance
@@ -31,6 +28,10 @@ smart-expense-tracker/
 ├── data/                    # Runtime JSON data (created when needed)
 ├── src/
 │   ├── main.py              # CLI and workflow orchestration
+│   ├── account.py           # Account dataclass
+│   ├── account_service.py   # Account validation and business operations
+│   ├── account_storage.py   # Validated, locked account JSON persistence
+│   ├── json_storage.py      # Shared atomic JSON writer
 │   ├── storage.py           # JSON loading, validation, and atomic saving
 │   ├── formatter.py         # Transaction display formatting
 │   ├── validators.py        # User-input validation
@@ -98,15 +99,28 @@ Use the shown display ID, such as `T-0001`, when updating or deleting a
 transaction. Display-ID lookup ignores surrounding whitespace and letter case,
 but otherwise requires an exact match.
 
+Choose **Account Management** to add, list, rename, deactivate, or reactivate
+accounts. Accounts use display IDs such as `A-0001`. Deactivation preserves
+the account record and reactivation restores it unless another active account
+has the same name. Permanent deletion is not available. Account records are
+not yet used by transaction entry in this development phase.
+
+Only active account names must be unique. A new account may reuse an inactive
+account's name, and an inactive account may be renamed to match an active
+account. Reactivation remains blocked until that active-name conflict is
+resolved.
+
+Account display-ID input ignores surrounding whitespace, letter case, and
+zero-padding differences, so values such as `a-1` resolve to `A-0001`.
+
 ## Running tests
 
 ```bash
 python -m pytest -q
 ```
 
-Tests use pytest temporary paths and do not write to
-`data/transactions.json`. The v1.0.0 release-candidate suite contains 27
-passing tests.
+Tests use pytest temporary paths and do not write to application data files.
+The current suite contains 74 passing tests.
 
 ## JSON persistence
 
@@ -149,11 +163,23 @@ atomically replace the destination with `os.replace` only after the complete
 content is flushed. If writing or replacement fails, the temporary file is
 removed and the previous data file remains intact.
 
+Accounts are stored separately in `data/accounts.json` as one document
+containing display-ID metadata and the account list. This makes an account
+change and its next-ID advancement one atomic file replacement. Account
+read-modify-write operations also use a cross-process file lock to prevent
+lost updates when multiple application instances run concurrently.
+
+The earlier list-only `accounts.json` and companion `accounts_state.json`
+format remains readable. Its highest safe next ID is preserved and migrated
+into the single-document format on the next successful account save.
+
 ## Known limitations
 
 - Local, single-user command-line application only
 - No database, GUI, charts, or multi-currency support
 - No Excel or PDF export
-- No authentication, synchronization, or concurrent-writer coordination
-- JSON schema validation is structural; it does not re-run interactive input
-  validators on every loaded field
+- No authentication or synchronization
+- Transaction persistence still has no concurrent-writer coordination
+- Accounts are not yet linked to transactions; transfers are not supported
+- Transaction JSON validation remains primarily structural; account JSON
+  validates field types, UUID and display-ID formats, and uniqueness invariants

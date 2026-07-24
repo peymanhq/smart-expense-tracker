@@ -23,6 +23,12 @@ files. Automated and manual verification therefore protect the real
 
 # Automated Tests
 
+The current v1.1.0 development suite completes successfully:
+
+```text
+74 passed
+```
+
 The pytest suite covers:
 
 - Valid transaction creation and normalization
@@ -42,6 +48,24 @@ The pytest suite covers:
   file cleanup
 - Isolation from the real application data file through `tmp_path` and
   `monkeypatch`
+- Account creation, whitespace normalization, and required-name validation
+- Case-insensitive duplicate active-account rejection
+- Sequential persistent account display IDs and non-reuse after deactivation
+- Account JSON saving, loading, missing/blank files, and malformed JSON
+- Account renaming with UUID and display-ID preservation
+- Duplicate rename, missing account, deactivation, and state-specific results
+- Account reactivation with identity preservation and duplicate-name protection
+- Account-reactivation access through the CLI submenu
+- Enter-to-return pause after account-management operations
+- Unicode-normalized duplicate-name rejection
+- Normalized account display-ID lookup
+- Concurrent account additions without duplicate IDs or lost updates
+- Strict account field, UUID, display-ID, and uniqueness validation
+- Invalid account metadata and legacy state rejection
+- Controlled malformed JSON, invalid UTF-8, and lock-setup errors
+- Legacy account-list and state migration to the atomic document format
+- Complete-document preservation after a failed account save
+- Preservation of deactivated account records in storage
 
 Run the suite from the repository root:
 
