@@ -1,26 +1,25 @@
 """Entry point for the Smart Expense Tracker application."""
 
-from transaction_factory import create_transaction
-from report import calculate_summary, filter_transactions
 from formatter import format_transactions
+from report import calculate_summary, filter_transactions
+from search import find_transaction_by_display_id, search_transactions
 from storage import (
-    update_transaction,
-    load_transactions,
+    StorageError,
     delete_transaction,
+    get_next_display_id,
+    load_transactions,
     save_transaction,
-    find_transaction_by_display_id,
+    update_transaction,
 )
-from search import search_transactions
+from transaction_factory import create_transaction
 from validators import validate_date
-from id_generator import generate_display_id
 
 """==============Handles Fanection================"""
 
 
 def handle_add_transaction(transaction_type: str) -> None:
-    transactions = load_transactions()
-    display_id = generate_display_id(transactions)
     try:
+        display_id = get_next_display_id()
         amount = input("Amount: ")
         category = input("Category: ")
         account = input("Account: ")
@@ -157,9 +156,11 @@ def handle_update_transaction() -> None:
         print(f"Error: {error}")
         return
 
-    update_transaction(transaction.display_id, updated_transaction)
-
-    print("Transaction updated successfully.")
+    updated = update_transaction(transaction.display_id, updated_transaction)
+    if updated:
+        print("Transaction updated successfully.")
+    else:
+        print("Transaction not found.")
 
 
 def handle_delete_transaction() -> None:
@@ -230,7 +231,10 @@ def main() -> None:
 
         action = MENU_ACTIONS.get(choice)
         if action:
-            action()
+            try:
+                action()
+            except StorageError as error:
+                print(f"Storage error: {error}")
             pause()
         else:
             print("Invalid choice, Please try again.")
