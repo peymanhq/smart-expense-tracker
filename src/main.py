@@ -7,20 +7,19 @@ from storage import (
     update_transaction,
     load_transactions,
     delete_transaction,
+    get_next_display_id,
     save_transaction,
     find_transaction_by_display_id,
 )
 from search import search_transactions
 from validators import validate_date
-from id_generator import generate_display_id
 
 """==============Handles Fanection================"""
 
 
 def handle_add_transaction(transaction_type: str) -> None:
-    transactions = load_transactions()
-    display_id = generate_display_id(transactions)
     try:
+        display_id = get_next_display_id()
         amount = input("Amount: ")
         category = input("Category: ")
         account = input("Account: ")
