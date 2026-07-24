@@ -155,9 +155,11 @@ def handle_update_transaction() -> None:
         print(f"Error: {error}")
         return
 
-    update_transaction(transaction.display_id, updated_transaction)
-
-    print("Transaction updated successfully.")
+    updated = update_transaction(transaction.display_id, updated_transaction)
+    if updated:
+        print("Transaction updated successfully.")
+    else:
+        print("Transaction not found.")
 
 
 def handle_delete_transaction() -> None:

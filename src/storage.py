@@ -1,7 +1,7 @@
 """JSON persistence for the Smart Expense Tracker."""
 
 import json
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 
@@ -156,12 +156,19 @@ def update_transaction(
     display_id: str,
     updated_transaction: Transaction,
 ) -> bool:
-    transactions = load_transactions()
+    document = _read_document()
+    transactions = _deserialize_transactions(document)
+    existing_transaction = find_transaction_by_display_id(transactions, display_id)
+    if existing_transaction is None:
+        return False
 
-    for index, transaction in enumerate(transactions):
-        if transaction.display_id.upper() == display_id.upper():
-            transactions[index] = updated_transaction
-            save_transactions(transactions)
-            return True
-
-    return False
+    preserved_transaction = replace(
+        updated_transaction,
+        id=existing_transaction.id,
+        display_id=existing_transaction.display_id,
+    )
+    index = transactions.index(existing_transaction)
+    transactions[index] = preserved_transaction
+    document["transactions"] = [asdict(item) for item in transactions]
+    _write_document(document)
+    return True
