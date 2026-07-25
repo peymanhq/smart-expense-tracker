@@ -22,7 +22,7 @@ search, and daily/range reports. Transaction mutations are locked, creation
 allocates display IDs atomically, and schema version 3 remains compatible with
 legacy transaction files.
 
-The current automated suite contains 323 passing tests. Transaction persistence
+The current automated suite contains 339 passing tests. Transaction persistence
 tests use temporary files and do not modify runtime JSON data.
 
 ## Current Architecture
@@ -130,9 +130,15 @@ types must match. Preserved inactive historical references are not revalidated
 during unrelated updates, and managed snapshots cannot be edited without a new
 reference.
 
-The CLI still submits free-text names without UUIDs. Interactive selection,
-display resolution, and migration of historical snapshot-only values remain
-future work.
+Transaction add and update now list active records by display ID and submit the
+selected UUIDs. Categories are listed for the resulting transaction type.
+Empty update selections preserve historical references, including inactive
+ones, and legacy snapshot-only records can be linked by choosing an active
+record. Explicit unlinking and automatic migration of historical snapshot-only
+values remain future work.
+
+Account, Category, and Transaction data still use separate JSON files and
+locks, so cross-file referential integrity is deliberately soft.
 
 ### Flat JSON Limits
 

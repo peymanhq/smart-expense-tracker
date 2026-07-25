@@ -1,21 +1,28 @@
 """Entry point for the Smart Expense Tracker application."""
 
+from collections.abc import Callable
 from datetime import date
 from functools import partial
+from typing import TypeVar
 
+from account import Account
 from account_service import (
     activate_account,
     add_account,
     deactivate_account,
     get_account_by_id,
+    get_account_by_display_id,
+    list_accounts,
     rename_account,
 )
 from account_storage import ACCOUNTS_FILE, load_accounts
+from category import Category
 from category_service import (
     activate_category,
     add_category,
     deactivate_category,
     get_category_by_id,
+    get_category_by_display_id,
     list_categories,
     rename_category,
 )
@@ -30,7 +37,11 @@ from report import (
     generate_daily_summary,
     generate_date_range_summary,
 )
-from search import filter_transactions, search_transactions
+from search import (
+    filter_transactions,
+    find_transaction_by_display_id,
+    search_transactions,
+)
 from transaction_repository import JsonTransactionRepository
 from transaction_service import (
     FutureTransactionDateError,
@@ -38,7 +49,7 @@ from transaction_service import (
     TransactionNotFoundError,
     TransactionService,
 )
-from validators import validate_transaction_date
+from validators import validate_transaction_date, validate_transaction_type
 
 TRANSACTION_TODAY_PROVIDER: TodayProvider = local_today
 TRANSACTION_REPOSITORY = JsonTransactionRepository()
@@ -55,6 +66,32 @@ TRANSACTION_SERVICE = TransactionService(
         state_file=CATEGORY_STATE_FILE,
     ),
 )
+TRANSACTION_ACTIVE_ACCOUNT_LIST = partial(
+    list_accounts,
+    accounts_file=ACCOUNTS_FILE,
+    active_only=True,
+)
+TRANSACTION_ACCOUNT_DISPLAY_LOOKUP = partial(
+    get_account_by_display_id,
+    accounts_file=ACCOUNTS_FILE,
+)
+TRANSACTION_ACTIVE_CATEGORY_LIST = partial(
+    list_categories,
+    categories_file=CATEGORIES_FILE,
+    state_file=CATEGORY_STATE_FILE,
+    active_only=True,
+)
+TRANSACTION_CATEGORY_DISPLAY_LOOKUP = partial(
+    get_category_by_display_id,
+    categories_file=CATEGORIES_FILE,
+    state_file=CATEGORY_STATE_FILE,
+)
+
+ManagedRecord = TypeVar("ManagedRecord", Account, Category)
+AccountList = Callable[[], list[Account]]
+CategoryList = Callable[..., list[Category]]
+AccountDisplayLookup = Callable[[str], Account | None]
+CategoryDisplayLookup = Callable[[str], Category | None]
 
 """==============Handles Fanection================"""
 
@@ -77,6 +114,84 @@ def _choose_transaction_type() -> str | None:
     if transaction_type is None:
         print("Invalid transaction type choice.")
     return transaction_type
+
+
+def _select_by_display_id(
+    candidates: list[ManagedRecord],
+    *,
+    heading: str,
+    prompt: str,
+    invalid_message: str,
+    display_lookup: Callable[[str], ManagedRecord | None],
+    allow_empty: bool = False,
+) -> ManagedRecord | None:
+    """Display candidates and resolve one using the public normalization rule."""
+    available = list(candidates)
+    print(f"\n{heading}")
+    for candidate in available:
+        print(f"{candidate.display_id} - {candidate.name}")
+
+    candidate_ids = {candidate.id for candidate in available}
+    while True:
+        display_id = input(prompt)
+        if allow_empty and not display_id.strip():
+            return None
+        selected = display_lookup(display_id)
+        if selected is not None and selected.id in candidate_ids:
+            return selected
+        print(invalid_message)
+
+
+def select_active_account(
+    candidates: list[Account],
+    *,
+    display_lookup: AccountDisplayLookup,
+    allow_empty: bool = False,
+) -> Account | None:
+    """Select an active Account without mutating the supplied candidates."""
+    active_accounts = [
+        account for account in candidates if account.is_active
+    ]
+    return _select_by_display_id(
+        active_accounts,
+        heading="Available accounts:",
+        prompt=(
+            "Enter a new account display ID, or press Enter to keep unchanged: "
+            if allow_empty
+            else "Select account ID: "
+        ),
+        invalid_message="Invalid or unavailable account display ID.",
+        display_lookup=display_lookup,
+        allow_empty=allow_empty,
+    )
+
+
+def select_active_category(
+    transaction_type: str,
+    candidates: list[Category],
+    *,
+    display_lookup: CategoryDisplayLookup,
+    allow_empty: bool = False,
+) -> Category | None:
+    """Select an active Category compatible with the requested type."""
+    active_categories = [
+        category
+        for category in candidates
+        if category.is_active
+        and category.transaction_type == transaction_type
+    ]
+    return _select_by_display_id(
+        active_categories,
+        heading=f"Available {transaction_type} categories:",
+        prompt=(
+            "Enter a new category display ID, or press Enter to keep unchanged: "
+            if allow_empty
+            else "Select category ID: "
+        ),
+        invalid_message="Invalid or unavailable category display ID.",
+        display_lookup=display_lookup,
+        allow_empty=allow_empty,
+    )
 
 
 def _selected_transaction_service(
@@ -139,7 +254,33 @@ def _prompt_date_filter(
 def handle_add_transaction(
     service: TransactionService,
     active_date: date,
+    *,
+    account_list: AccountList | None = None,
+    account_display_lookup: AccountDisplayLookup | None = None,
+    category_list: CategoryList | None = None,
+    category_display_lookup: CategoryDisplayLookup | None = None,
 ) -> None:
+    account_list = (
+        TRANSACTION_ACTIVE_ACCOUNT_LIST
+        if account_list is None
+        else account_list
+    )
+    account_display_lookup = (
+        TRANSACTION_ACCOUNT_DISPLAY_LOOKUP
+        if account_display_lookup is None
+        else account_display_lookup
+    )
+    category_list = (
+        TRANSACTION_ACTIVE_CATEGORY_LIST
+        if category_list is None
+        else category_list
+    )
+    category_display_lookup = (
+        TRANSACTION_CATEGORY_DISPLAY_LOOKUP
+        if category_display_lookup is None
+        else category_display_lookup
+    )
+
     print(f"Active transaction date: {active_date.isoformat()}")
     transaction_type = _choose_transaction_type()
     if transaction_type is None:
@@ -147,17 +288,48 @@ def handle_add_transaction(
 
     try:
         amount = input("Amount: ")
-        category = input("Category: ")
-        account = input("Account: ")
+        accounts = [
+            account for account in account_list() if account.is_active
+        ]
+        if not accounts:
+            print("No active accounts are available. Transaction not added.")
+            return
+        selected_account = select_active_account(
+            accounts,
+            display_lookup=account_display_lookup,
+        )
+        assert selected_account is not None
+
+        categories = [
+            category
+            for category in category_list(transaction_type=transaction_type)
+            if category.is_active
+            and category.transaction_type == transaction_type
+        ]
+        if not categories:
+            print(
+                f"No active {transaction_type} categories are available. "
+                "Transaction not added."
+            )
+            return
+        selected_category = select_active_category(
+            transaction_type,
+            categories,
+            display_lookup=category_display_lookup,
+        )
+        assert selected_category is not None
+
         description = input("Description: ")
 
         transaction = service.add_transaction(
             transaction_date=active_date,
             transaction_type=transaction_type,
             amount=amount,
-            category=category,
-            account=account,
+            category=selected_category.name,
+            account=selected_account.name,
             description=description,
+            account_id=selected_account.id,
+            category_id=selected_category.id,
         )
 
         print(
@@ -331,44 +503,116 @@ def handle_filter_transactions(
 def handle_update_transaction(
     service: TransactionService,
     active_date: date,
+    *,
+    account_list: AccountList | None = None,
+    account_display_lookup: AccountDisplayLookup | None = None,
+    category_list: CategoryList | None = None,
+    category_display_lookup: CategoryDisplayLookup | None = None,
 ) -> None:
+    account_list = (
+        TRANSACTION_ACTIVE_ACCOUNT_LIST
+        if account_list is None
+        else account_list
+    )
+    account_display_lookup = (
+        TRANSACTION_ACCOUNT_DISPLAY_LOOKUP
+        if account_display_lookup is None
+        else account_display_lookup
+    )
+    category_list = (
+        TRANSACTION_ACTIVE_CATEGORY_LIST
+        if category_list is None
+        else category_list
+    )
+    category_display_lookup = (
+        TRANSACTION_CATEGORY_DISPLAY_LOOKUP
+        if category_display_lookup is None
+        else category_display_lookup
+    )
+
     handle_view_transactions(service, active_date)
     display_id = input("Transaction ID: ").strip().upper()
     if not display_id:
         print("Error: Transaction ID cannot be empty.")
         return
 
-    amount_input = input("New amount [press Enter to keep current]: ").strip()
-    description_input = input(
-        "New description [press Enter to keep current]: "
-    ).strip()
-    type_input = input(
-        "New type (income/expense) [press Enter to keep current]: "
-    ).strip()
-    category_input = input(
-        "New category [press Enter to keep current]: "
-    ).strip()
-    account_input = input(
-        "New account [press Enter to keep current]: "
-    ).strip()
-    print(f"Current transaction date: {active_date.isoformat()}")
-    date_input = input(
-        "New transaction date [press Enter to keep current]: "
-    ).strip()
-
     try:
+        existing = find_transaction_by_display_id(
+            service.list_transactions(),
+            display_id,
+        )
+        if existing is None:
+            raise TransactionNotFoundError(display_id)
+
+        amount_input = input(
+            "New amount [press Enter to keep current]: "
+        ).strip()
+        description_input = input(
+            "New description [press Enter to keep current]: "
+        ).strip()
+        type_input = input(
+            "New type (income/expense) [press Enter to keep current]: "
+        ).strip()
+        resulting_type = (
+            existing.type
+            if not type_input
+            else validate_transaction_type(type_input)
+        )
+
+        print(f"Current account: {existing.account}")
+        accounts = [
+            account for account in account_list() if account.is_active
+        ]
+        selected_account = None
+        if accounts:
+            selected_account = select_active_account(
+                accounts,
+                display_lookup=account_display_lookup,
+                allow_empty=True,
+            )
+        else:
+            print(
+                "No active replacement accounts are available. "
+                "Current account will remain unchanged."
+            )
+
+        print(f"Current category: {existing.category}")
+        categories = [
+            category
+            for category in category_list(transaction_type=resulting_type)
+            if category.is_active
+            and category.transaction_type == resulting_type
+        ]
+        selected_category = None
+        if categories:
+            selected_category = select_active_category(
+                resulting_type,
+                categories,
+                display_lookup=category_display_lookup,
+                allow_empty=True,
+            )
+        else:
+            print(
+                f"No active {resulting_type} replacement categories are "
+                "available. Current category will remain unchanged."
+            )
+
+        print(f"Current transaction date: {active_date.isoformat()}")
+        date_input = input(
+            "New transaction date [press Enter to keep current]: "
+        ).strip()
         new_date = (
             validate_transaction_date(date_input) if date_input else None
         )
         updates = {}
         if type_input:
-            updates["transaction_type"] = type_input
+            updates["transaction_type"] = resulting_type
         if amount_input:
             updates["amount"] = amount_input
-        if category_input:
-            updates["category"] = category_input
-        if account_input:
-            updates["account"] = account_input
+        if selected_category is not None:
+            updates["category_id"] = selected_category.id
+        if selected_account is not None:
+            updates["account_id"] = selected_account.id
         if description_input:
             updates["description"] = description_input
         if new_date is not None:

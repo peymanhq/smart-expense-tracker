@@ -683,6 +683,14 @@ the new type. If an existing managed category is preserved, it is resolved
 including inactive records and must match the new type. Legacy transactions
 with `category_id=None` retain their free-text compatibility behavior.
 
+Transaction add and update use active managed-record lists and normalized
+display-ID lookup in the CLI. Display IDs are interaction keys only; the CLI
+passes UUIDs to `TransactionService`. Each selection remains independent.
+During update, empty input omits the corresponding UUID argument and preserves
+the historical reference or legacy snapshot. Legacy records may be linked by
+selecting an active record, but automatic reconciliation and explicit unlinking
+remain unsupported.
+
 ## Consequences
 
 - Schema versions 1, 2, and 3 remain readable without read-time migration.
@@ -692,5 +700,8 @@ with `category_id=None` retain their free-text compatibility behavior.
 - Newly supplied managed references enforce existence, active status, and
   category/type compatibility in `TransactionService`.
 - Historical inactive references remain valid when they are not being changed.
-- CLI Account and Category selection and legacy reconciliation remain future
-  work.
+- CLI Account and Category selection uses display IDs without persisting them
+  as foreign keys.
+- Separate JSON files and locks provide soft, not database-level, referential
+  integrity.
+- Explicit unlinking and automatic legacy reconciliation remain future work.

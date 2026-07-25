@@ -91,6 +91,9 @@ type-then-display-ID ordering. UUID and display-ID lookup includes inactive
 records so historical callers can still resolve them; active-only lists are the
 boundary intended for future selection workflows. These queries return new
 collections, propagate storage errors, and do not modify persisted data.
+`main.py` binds the active-list and normalized display-ID query functions to
+runtime paths for transaction selection. Display IDs remain user-facing keys;
+the selected domain UUIDs cross into `TransactionService`.
 
 ---
 
@@ -98,8 +101,9 @@ collections, propagate storage errors, and do not modify persisted data.
 
 ### Transaction Creation
 
-1. `main.py` passes the active financial date and entered values to
-   `TransactionService`.
+1. `main.py` lists active Accounts and Categories through public query
+   boundaries, accepts normalized display-ID selections, and passes their UUIDs
+   with the active financial date and entered values to `TransactionService`.
 2. The service applies the shared future-date policy, obtains one injected UTC
    timestamp, and uses `transaction_factory.py` for validation and construction.
    Optional managed UUIDs are resolved independently: a supplied reference must
@@ -133,6 +137,13 @@ changes to a preserved managed snapshot are rejected; callers must supply a new
 UUID. A transaction-type change must remain compatible with an existing or new
 managed category. Legacy transactions with no category UUID retain their
 free-text category during type changes.
+
+The update CLI lists active replacement Accounts and Categories for the
+resulting transaction type. Empty selection omits the reference argument, so
+inactive or missing historical references can remain unchanged. A legacy
+snapshot-only transaction can be linked by selecting an active record. The
+service, not the selection list, remains authoritative if status changes
+between display and mutation.
 
 `search.py` applies exact, inclusive closed-range, and one-sided-range financial
 date selection with AND semantics. `report.py` reuses that pure selection logic
@@ -261,10 +272,12 @@ failed second write can create a harmless ID gap but cannot cause reuse.
 Complete mutations run under a re-entrant cross-process category lock.
 
 `TransactionService` now validates optional managed Account and Category UUIDs
-through injected public query boundaries. Runtime CLI handlers still send only
-snapshot names, so current terminal add/update flows remain in legacy mode.
-Interactive Account/Category selection, display resolution, and legacy
-reconciliation remain future integration work.
+through injected public query boundaries. Runtime transaction add and update
+handlers list active records by display ID and submit their UUIDs. Stored names
+remain snapshots, inactive historical references may be preserved, and legacy
+transactions may be linked during update. Explicit unlinking and automatic
+legacy reconciliation remain future work. Separate JSON files and locks provide
+soft rather than database-level referential integrity.
 
 ---
 

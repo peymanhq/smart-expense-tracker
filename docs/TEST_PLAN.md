@@ -26,7 +26,7 @@ files. Automated and manual verification therefore protect the real
 The current v1.1.0 development suite completes successfully:
 
 ```text
-323 passed
+339 passed
 ```
 
 The pytest suite covers:
@@ -62,6 +62,11 @@ The pytest suite covers:
   snapshots, and category/type compatibility
 - Preservation of inactive historical references and rejection of direct
   managed snapshot edits
+- Deterministic active Account/Category display-ID selection with normalized
+  lookup and invalid-input retry
+- Managed UUID submission from transaction add/update CLI handlers
+- Resulting-type Category filtering, legacy linking, empty-selection
+  preservation, and empty-option behavior
 - Successful and unsuccessful deletion
 - Exact-date, inclusive closed-range, and one-sided API search
 - AND-composed filters and deterministic date/display-ID ordering

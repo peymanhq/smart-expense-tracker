@@ -78,10 +78,11 @@ In development.
 
 Optional `category_id` and `account_id` transaction fields are established.
 Programmatic managed-reference validation is established in
-`TransactionService`. Category and Account selection during transaction entry,
-migration of existing free-text values, transfers, Decimal money, Excel/PDF
-export, charts/dashboard, SQLite, multiple currencies, multiple accounts, and a
-GUI remain future work. Version 1.1.0 is still in development.
+`TransactionService`, and transaction add/update now select active Accounts and
+Categories by display ID. Automatic migration of existing free-text values,
+explicit unlinking, transfers, Decimal money, Excel/PDF export,
+charts/dashboard, SQLite, multiple currencies, multiple accounts, and a GUI
+remain future work. Version 1.1.0 is still in development.
 
 ---
 

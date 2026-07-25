@@ -160,7 +160,7 @@ python -m pytest -q
 ```
 
 Tests use pytest temporary paths and do not write to application data files.
-The current suite contains 323 passing tests.
+The current suite contains 339 passing tests.
 
 ## JSON persistence
 
@@ -227,6 +227,12 @@ caller-provided snapshot text. Omitted references preserve legacy free-text
 behavior. Existing inactive references remain valid for unrelated historical
 updates.
 
+Transaction add and update prompts list active managed records as
+`display ID - name`. Users select those display IDs, while the CLI passes the
+corresponding UUIDs to `TransactionService`; display IDs are not stored as
+foreign keys. Legacy snapshot-only transactions can be linked during update,
+and leaving a replacement blank preserves an inactive historical reference.
+
 Accounts are stored separately in `data/accounts.json` as one document
 containing display-ID metadata and the account list. This makes an account
 change and its next-ID advancement one atomic file replacement. Account
@@ -251,8 +257,8 @@ ID. If state is missing, it is recovered from the highest stored category ID.
 - No database, GUI, charts, or multi-currency support
 - No Excel or PDF export
 - No authentication or synchronization
-- Transactions support programmatic managed Account and Category references,
-  but CLI selection, display resolution, and legacy reconciliation are not yet
-  implemented
+- Transactions use managed Account and Category selection in the CLI, but
+  explicit unlinking and automatic legacy reconciliation are not implemented
+- Referential integrity remains soft across the separate JSON files and locks
 - Transfers and Excel import/export are not implemented
 - Transaction amounts still use `float`; exact `Decimal` money is deferred
