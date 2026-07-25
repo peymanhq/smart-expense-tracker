@@ -1,3 +1,4 @@
+import re
 from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
@@ -15,7 +16,7 @@ def validate_amount(amount: str | float | int) -> float:
 
 
 def validate_transaction_date(value: date | str) -> date:
-    """Return a transaction date, accepting only canonical ISO date strings."""
+    """Parse numeric YYYY-M-D text and return a normalized calendar date."""
     if isinstance(value, datetime):
         raise ValueError("Transaction date must be a date without a time.")
 
@@ -25,17 +26,19 @@ def validate_transaction_date(value: date | str) -> date:
     if not isinstance(value, str):
         raise ValueError("Transaction date must be in YYYY-MM-DD format.")
 
+    match = re.fullmatch(
+        r"([0-9]{4})-([0-9]{1,2})-([0-9]{1,2})",
+        value,
+    )
+    if match is None:
+        raise ValueError("Transaction date must be in YYYY-MM-DD format.")
+
     try:
-        parsed_date = date.fromisoformat(value)
+        return date(*(int(part) for part in match.groups()))
     except ValueError as error:
         raise ValueError(
             "Transaction date must be in YYYY-MM-DD format."
         ) from error
-
-    if parsed_date.isoformat() != value:
-        raise ValueError("Transaction date must be in YYYY-MM-DD format.")
-
-    return parsed_date
 
 
 def validate_utc_datetime(value: datetime, field_name: str) -> datetime:

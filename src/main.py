@@ -500,6 +500,21 @@ def handle_filter_transactions(
     print(format_transactions(results))
 
 
+def prompt_transaction_date(current_date: date) -> date | None:
+    """Prompt until an optional replacement transaction date is valid."""
+    print(f"Current transaction date: {current_date.isoformat()}")
+    while True:
+        date_input = input(
+            "Enter new date, or press Enter to keep unchanged: "
+        ).strip()
+        if not date_input:
+            return None
+        try:
+            return validate_transaction_date(date_input)
+        except ValueError as error:
+            _print_transaction_error(error)
+
+
 def handle_update_transaction(
     service: TransactionService,
     active_date: date,
@@ -597,13 +612,7 @@ def handle_update_transaction(
                 "available. Current category will remain unchanged."
             )
 
-        print(f"Current transaction date: {active_date.isoformat()}")
-        date_input = input(
-            "New transaction date [press Enter to keep current]: "
-        ).strip()
-        new_date = (
-            validate_transaction_date(date_input) if date_input else None
-        )
+        new_date = prompt_transaction_date(existing.transaction_date)
         updates = {}
         if type_input:
             updates["transaction_type"] = resulting_type

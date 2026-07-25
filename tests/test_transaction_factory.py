@@ -153,9 +153,9 @@ def test_reject_invalid_transaction_input(
 
 @pytest.mark.parametrize(
     "transaction_date",
-    ["2026/07/24", "2026-7-24", " 2026-07-24", "2026-07-24 "],
+    ["2026/07/24", " 2026-07-24", "2026-07-24 "],
 )
-def test_reject_noncanonical_transaction_date_formats(
+def test_reject_unsupported_transaction_date_formats(
     transaction_date: str,
 ) -> None:
     with pytest.raises(ValueError, match="YYYY-MM-DD"):
@@ -169,6 +169,27 @@ def test_reject_noncanonical_transaction_date_formats(
             created_at=datetime(2026, 7, 24, 9, 15, tzinfo=timezone.utc),
             updated_at=datetime(2026, 7, 24, 9, 15, tzinfo=timezone.utc),
         )
+
+
+@pytest.mark.parametrize(
+    "transaction_date",
+    ["2026-7-5", "2026-07-5", "2026-7-05"],
+)
+def test_normalize_supported_unpadded_transaction_date(
+    transaction_date: str,
+) -> None:
+    transaction = create_transaction(
+        transaction_type="expense",
+        amount=10,
+        category="Food",
+        account="Cash",
+        description="Lunch",
+        transaction_date=transaction_date,
+        created_at=datetime(2026, 7, 5, 9, 15, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 7, 5, 9, 15, tzinfo=timezone.utc),
+    )
+
+    assert transaction.transaction_date == date(2026, 7, 5)
 
 
 def test_reject_invalid_calendar_date() -> None:

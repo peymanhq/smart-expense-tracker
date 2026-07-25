@@ -11,6 +11,7 @@ from id_generator import (
     parse_account_display_id,
     parse_category_display_id,
 )
+from json_storage import StorageError
 from transaction_repository import JsonTransactionRepository
 from transaction_service import TransactionService
 
@@ -442,6 +443,7 @@ def test_update_passes_only_fields_the_user_selected(monkeypatch) -> None:
                         "type": "expense",
                         "account": "Cash",
                         "category": "Food",
+                        "transaction_date": PAST_DATE,
                     },
                 )()
             ]
@@ -472,6 +474,107 @@ def test_update_passes_only_fields_the_user_selected(monkeypatch) -> None:
             "amount": "25",
         },
     )
+
+
+def test_update_retries_invalid_date_without_losing_entered_values(
+    monkeypatch,
+    capsys,
+) -> None:
+    calls = []
+    existing = type(
+        "Existing",
+        (),
+        {
+            "display_id": "T-0042",
+            "type": "expense",
+            "amount": 10.0,
+            "account": "Cash",
+            "category": "Food",
+            "description": "Lunch",
+            "transaction_date": PAST_DATE,
+        },
+    )()
+
+    class FakeService:
+        def list_transactions_by_date(self, transaction_date):
+            return [existing]
+
+        def list_transactions(self):
+            return [existing]
+
+        def update_transaction(self, display_id, **kwargs):
+            calls.append((display_id, kwargs))
+            return type(
+                "Updated",
+                (),
+                {
+                    "display_id": display_id,
+                    "transaction_date": kwargs["transaction_date"],
+                },
+            )()
+
+    prompts = set_inputs(
+        monkeypatch,
+        [
+            "T-0042",
+            "25",
+            "Dinner",
+            "expense",
+            "a-1",
+            "c-1",
+            "2026-02-30",
+            "2026-7-5",
+        ],
+    )
+
+    main.handle_update_transaction(
+        FakeService(),
+        PAST_DATE,
+        account_list=lambda: [ACCOUNT],
+        account_display_lookup=account_display_lookup,
+        category_list=lambda **kwargs: [EXPENSE_CATEGORY],
+        category_display_lookup=category_display_lookup,
+    )
+
+    assert calls == [
+        (
+            "T-0042",
+            {
+                "active_date": PAST_DATE,
+                "amount": "25",
+                "description": "Dinner",
+                "transaction_type": "expense",
+                "account_id": ACCOUNT.id,
+                "category_id": EXPENSE_CATEGORY.id,
+                "transaction_date": date(2026, 7, 5),
+            },
+        )
+    ]
+    assert prompts.count(
+        "Enter new date, or press Enter to keep unchanged: "
+    ) == 2
+    assert (
+        "Transaction date must be in YYYY-MM-DD format."
+        in capsys.readouterr().out
+    )
+
+
+def test_transaction_date_prompt_does_not_swallow_storage_errors(
+    monkeypatch,
+) -> None:
+    set_inputs(monkeypatch, ["2026-7-5"])
+
+    def raise_storage_error(value):
+        raise StorageError("data unavailable")
+
+    monkeypatch.setattr(
+        main,
+        "validate_transaction_date",
+        raise_storage_error,
+    )
+
+    with pytest.raises(StorageError, match="data unavailable"):
+        main.prompt_transaction_date(PAST_DATE)
 
 
 def test_delete_confirmation_and_active_date_scope(
