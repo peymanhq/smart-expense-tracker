@@ -417,6 +417,11 @@ single-document format on the next save.
 Keep account validation and mutation rules in `account_service.py`, separate
 from the passive `Account` dataclass and the CLI.
 
+Expose read-only service queries for deterministic account listing and lookup
+by canonical internal UUID or normalized display ID. Active-only listing is
+available for future selection workflows, while lookup remains
+status-independent so inactive records stay resolvable for history.
+
 ## Consequences
 
 - Existing transaction data and behavior remain unchanged.
@@ -427,6 +432,7 @@ from the passive `Account` dataclass and the CLI.
 - Malformed account records fail with controlled storage errors.
 - Account workflows can later be reused by interfaces other than the CLI.
 - Accounts and transactions remain intentionally unconnected in this phase.
+- Callers do not need private lookup helpers or direct account JSON access.
 
 ---
 
@@ -461,6 +467,11 @@ ID, persist advanced state before the category list so a failed list write can
 create a gap but cannot allow ID reuse. Recover missing state from the highest
 stored `C-####` ID.
 
+Expose read-only service queries for deterministic category listing and lookup
+by canonical internal UUID or normalized display ID. Listing may filter by
+active status and validated transaction type. Lookup remains
+status-independent so inactive records stay resolvable for history.
+
 ## Consequences
 
 - Categories remain standalone and transactions retain their v1.0 schema.
@@ -469,6 +480,7 @@ stored `C-####` ID.
 - Concurrent mutations do not silently lose records or duplicate identifiers.
 - Corrupt category records or state fail with controlled `StorageError`.
 - There is no unnecessary legacy Category format.
+- Callers do not need private lookup helpers or direct category JSON access.
 
 ---
 

@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, replace
 from pathlib import Path
+from uuid import UUID
 
 from account import (
     Account,
@@ -65,6 +66,55 @@ def _find_account_by_display_id(
             if account.display_id == normalized_display_id
         ),
         None,
+    )
+
+
+def list_accounts(
+    accounts_file: Path = ACCOUNTS_FILE,
+    *,
+    active_only: bool = False,
+) -> list[Account]:
+    """Return accounts in ascending numeric display-ID order."""
+    accounts = load_accounts(accounts_file)
+    if active_only:
+        accounts = [account for account in accounts if account.is_active]
+    return sorted(
+        accounts,
+        key=lambda account: parse_account_display_id(account.display_id) or 0,
+    )
+
+
+def get_account_by_id(
+    account_id: str,
+    accounts_file: Path = ACCOUNTS_FILE,
+) -> Account | None:
+    """Return an active or inactive account by canonical internal UUID."""
+    if not isinstance(account_id, str):
+        return None
+    try:
+        parsed_id = UUID(account_id)
+    except (ValueError, AttributeError):
+        return None
+    if str(parsed_id) != account_id:
+        return None
+    return next(
+        (
+            account
+            for account in list_accounts(accounts_file)
+            if account.id == account_id
+        ),
+        None,
+    )
+
+
+def get_account_by_display_id(
+    display_id: str,
+    accounts_file: Path = ACCOUNTS_FILE,
+) -> Account | None:
+    """Return an active or inactive account by normalized display ID."""
+    return _find_account_by_display_id(
+        list_accounts(accounts_file),
+        display_id,
     )
 
 

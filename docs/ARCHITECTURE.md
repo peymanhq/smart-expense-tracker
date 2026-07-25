@@ -79,6 +79,15 @@ rules remain independent of CLI input and output.
 Category workflows use the same focused service boundary and remain
 independent of transaction creation.
 
+The function-oriented account and category services also expose public,
+read-only managed-record queries. Account queries list all or only active
+records and resolve canonical UUIDs or normalized display IDs. Category queries
+add active-state and transaction-type filters while retaining the established
+type-then-display-ID ordering. UUID and display-ID lookup includes inactive
+records so historical callers can still resolve them; active-only lists are the
+boundary intended for future selection workflows. These queries return new
+collections, propagate storage errors, and do not modify persisted data.
+
 ---
 
 ## Current Workflows
@@ -128,6 +137,11 @@ intentionally reusable: a new account or inactive-account rename may match an
 active name, but the inactive account cannot be reactivated until the conflict
 is resolved.
 
+Public query operations are `list_accounts()`, `get_account_by_id()`, and
+`get_account_by_display_id()`. Listing is deterministic by numeric account
+display ID and can exclude inactive records. Both lookup operations return
+active or inactive records, with UUID lookup requiring canonical UUID text.
+
 ### Category Management
 
 `category_service.py` trims and NFC-normalizes names, canonicalizes transaction
@@ -138,6 +152,12 @@ activation is rejected if it would conflict with an active category of the
 same type. Listing is deterministic: transaction type, then numeric display ID.
 Display-ID lookup follows Account Management normalization while still
 requiring an exact complete category ID.
+
+Public query operations are `list_categories()`, `get_category_by_id()`, and
+`get_category_by_display_id()`. Listing can exclude inactive records and filter
+by a validated `income` or `expense` transaction type. UUID and display-ID
+lookup remain status-independent for historical resolution. These boundaries
+do not yet connect categories to transactions.
 
 ---
 

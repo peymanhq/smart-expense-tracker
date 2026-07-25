@@ -8,6 +8,9 @@ from account_service import (
     activate_account,
     add_account,
     deactivate_account,
+    get_account_by_display_id,
+    get_account_by_id,
+    list_accounts,
     rename_account,
 )
 from account_storage import load_accounts
@@ -37,6 +40,57 @@ def test_account_name_is_trimmed(account_paths: tuple[Path, Path]) -> None:
 
     assert result.account is not None
     assert result.account.name == "Bank Account"
+
+
+def test_account_queries_list_filter_and_order_deterministically(
+    account_paths: tuple[Path, Path],
+) -> None:
+    first = add_account("Cash", *account_paths).account
+    second = add_account("Bank", *account_paths).account
+    third = add_account("Savings", *account_paths).account
+    assert first is not None
+    assert second is not None
+    assert third is not None
+    deactivate_account(first.display_id, *account_paths)
+
+    all_accounts = list_accounts(account_paths[0])
+    active_accounts = list_accounts(account_paths[0], active_only=True)
+
+    assert [account.display_id for account in all_accounts] == [
+        "A-0001",
+        "A-0002",
+        "A-0003",
+    ]
+    assert [account.display_id for account in active_accounts] == [
+        "A-0002",
+        "A-0003",
+    ]
+
+    all_accounts.clear()
+    assert len(list_accounts(account_paths[0])) == 3
+
+
+def test_account_queries_resolve_active_and_inactive_records(
+    account_paths: tuple[Path, Path],
+) -> None:
+    active = add_account("Cash", *account_paths).account
+    inactive = add_account("Bank", *account_paths).account
+    assert active is not None
+    assert inactive is not None
+    deactivate_account(inactive.display_id, *account_paths)
+
+    resolved_inactive = get_account_by_id(inactive.id, account_paths[0])
+
+    assert get_account_by_id(active.id, account_paths[0]) == active
+    assert resolved_inactive is not None
+    assert resolved_inactive.id == inactive.id
+    assert resolved_inactive.is_active is False
+    assert get_account_by_display_id(" a-1 ", account_paths[0]) == active
+    assert get_account_by_id(str(UUID(int=0)), account_paths[0]) is None
+    assert get_account_by_id("not-a-uuid", account_paths[0]) is None
+    assert get_account_by_id(f"{{{active.id}}}", account_paths[0]) is None
+    assert get_account_by_display_id("A-9999", account_paths[0]) is None
+    assert get_account_by_display_id("account-1", account_paths[0]) is None
 
 
 def test_empty_account_name_is_rejected(account_paths: tuple[Path, Path]) -> None:

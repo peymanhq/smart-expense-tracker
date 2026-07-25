@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, replace
 from pathlib import Path
+from uuid import UUID
 
 from category import Category, canonicalize_category_name, category_name_key
 from category_storage import (
@@ -82,14 +83,70 @@ def _find_category_by_display_id(
 def list_categories(
     categories_file: Path = CATEGORIES_FILE,
     state_file: Path = CATEGORY_STATE_FILE,
+    *,
+    active_only: bool = False,
+    transaction_type: str | None = None,
 ) -> list[Category]:
-    """Return categories ordered by transaction type and display ID."""
+    """Return filtered categories ordered by type and numeric display ID."""
+    cleaned_type = None
+    if transaction_type is not None:
+        cleaned_type = _clean_transaction_type(transaction_type)
+        if cleaned_type is None:
+            raise ValueError("Invalid transaction type.")
+
+    categories = load_categories(categories_file, state_file)
+    if active_only:
+        categories = [
+            category for category in categories if category.is_active
+        ]
+    if cleaned_type is not None:
+        categories = [
+            category
+            for category in categories
+            if category.transaction_type == cleaned_type
+        ]
     return sorted(
-        load_categories(categories_file, state_file),
+        categories,
         key=lambda category: (
             category.transaction_type,
             parse_category_display_id(category.display_id) or 0,
         ),
+    )
+
+
+def get_category_by_id(
+    category_id: str,
+    categories_file: Path = CATEGORIES_FILE,
+    state_file: Path = CATEGORY_STATE_FILE,
+) -> Category | None:
+    """Return an active or inactive category by canonical internal UUID."""
+    if not isinstance(category_id, str):
+        return None
+    try:
+        parsed_id = UUID(category_id)
+    except (ValueError, AttributeError):
+        return None
+    if str(parsed_id) != category_id:
+        return None
+    return next(
+        (
+            category
+            for category in list_categories(categories_file, state_file)
+            if category.id == category_id
+        ),
+        None,
+    )
+
+
+def get_category_by_display_id(
+    display_id: str,
+    categories_file: Path = CATEGORIES_FILE,
+    state_file: Path = CATEGORY_STATE_FILE,
+) -> Category | None:
+    """Return an active or inactive category by normalized display ID."""
+    return _find_category_by_display_id(
+        list_categories(categories_file, state_file),
+        display_id,
     )
 
 

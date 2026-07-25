@@ -8,6 +8,8 @@ from category_service import (
     activate_category,
     add_category,
     deactivate_category,
+    get_category_by_display_id,
+    get_category_by_id,
     list_categories,
     rename_category,
 )
@@ -35,6 +37,90 @@ def test_add_category_normalizes_and_persists_valid_category(
     assert result.category.is_active is True
     assert str(UUID(result.category.id)) == result.category.id
     assert load_categories(*category_paths) == [result.category]
+
+
+def test_category_queries_list_filter_and_order_deterministically(
+    category_paths: tuple[Path, Path],
+) -> None:
+    income = add_category("Salary", "income", *category_paths).category
+    inactive_expense = add_category(
+        "Food",
+        "expense",
+        *category_paths,
+    ).category
+    active_expense = add_category(
+        "Travel",
+        "expense",
+        *category_paths,
+    ).category
+    assert income is not None
+    assert inactive_expense is not None
+    assert active_expense is not None
+    deactivate_category(inactive_expense.display_id, *category_paths)
+
+    all_categories = list_categories(*category_paths)
+    active_categories = list_categories(
+        *category_paths,
+        active_only=True,
+    )
+
+    assert [category.display_id for category in all_categories] == [
+        "C-0002",
+        "C-0003",
+        "C-0001",
+    ]
+    assert [category.display_id for category in active_categories] == [
+        "C-0003",
+        "C-0001",
+    ]
+    assert list_categories(
+        *category_paths,
+        active_only=True,
+        transaction_type=" EXPENSE ",
+    ) == [active_expense]
+    assert list_categories(
+        *category_paths,
+        active_only=True,
+        transaction_type="Income",
+    ) == [income]
+
+    all_categories.clear()
+    assert len(list_categories(*category_paths)) == 3
+
+
+def test_category_queries_resolve_active_and_inactive_records(
+    category_paths: tuple[Path, Path],
+) -> None:
+    active = add_category("Salary", "income", *category_paths).category
+    inactive = add_category("Food", "expense", *category_paths).category
+    assert active is not None
+    assert inactive is not None
+    deactivate_category(inactive.display_id, *category_paths)
+
+    resolved_inactive = get_category_by_id(inactive.id, *category_paths)
+
+    assert get_category_by_id(active.id, *category_paths) == active
+    assert resolved_inactive is not None
+    assert resolved_inactive.id == inactive.id
+    assert resolved_inactive.is_active is False
+    assert get_category_by_display_id(" c-1 ", *category_paths) == active
+    assert get_category_by_id(str(UUID(int=0)), *category_paths) is None
+    assert get_category_by_id("not-a-uuid", *category_paths) is None
+    assert get_category_by_id(f"{{{active.id}}}", *category_paths) is None
+    assert get_category_by_display_id("C-9999", *category_paths) is None
+    assert get_category_by_display_id("category-1", *category_paths) is None
+
+
+@pytest.mark.parametrize("transaction_type", ["transfer", "", 42])
+def test_category_query_rejects_invalid_transaction_type(
+    transaction_type,
+    category_paths: tuple[Path, Path],
+) -> None:
+    with pytest.raises(ValueError, match="Invalid transaction type"):
+        list_categories(
+            *category_paths,
+            transaction_type=transaction_type,
+        )
 
 
 @pytest.mark.parametrize(
