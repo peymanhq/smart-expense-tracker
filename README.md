@@ -7,17 +7,20 @@ workflows without requiring a database or external service.
 ## Version status
 
 **Smart Expense Tracker v1.0.0** is the published stable baseline. Development
-of **v1.1.0** is in progress. Standalone Account Management and standalone
-Category Management are implemented; the rest of v1.1.0 is not complete.
+of **v1.1.0** is in progress. Standalone Account Management, standalone
+Category Management, and Date-based Transaction Management are implemented.
 
 ## Features
 
-- Add income and expense transactions
+- Use a selected-date transaction workspace that starts on today
+- Add income and expense transactions for today or a selected historical date
+- View, update, and delete transactions within the active financial date
+- Move a transaction explicitly from one financial date to another
+- Browse populated transaction dates and their transaction counts
 - Add, view, rename, deactivate, and reactivate accounts
 - Add, view, rename, activate, and deactivate income/expense categories
-- View, search, and filter transactions
-- Update or delete a transaction by its display ID
-- Calculate total income, total expense, and current balance
+- Search and filter by exact date or inclusive date range
+- Calculate all-time, daily, and inclusive date-range financial reports
 - Validate amounts, dates, transaction types, and required fields
 - Persist data locally in JSON
 - Keep an internal UUID separate from the user-facing display ID
@@ -37,7 +40,11 @@ smart-expense-tracker/
 │   ├── category_service.py  # Category validation and business operations
 │   ├── category_storage.py  # Validated, locked category JSON persistence
 │   ├── json_storage.py      # Shared atomic JSON writer
-│   ├── storage.py           # JSON loading, validation, and atomic saving
+│   ├── storage.py           # Versioned, locked transaction JSON storage
+│   ├── transaction_repository.py
+│   ├── transaction_service.py
+│   ├── clock.py             # Injectable date/time providers
+│   ├── date_policy.py       # Shared financial-date query policy
 │   ├── formatter.py         # Transaction display formatting
 │   ├── validators.py        # User-input validation
 │   ├── transaction.py       # Transaction dataclass
@@ -81,28 +88,45 @@ From the repository root:
 python src/main.py
 ```
 
-Choose a numbered menu action and follow the prompts. Dates use `YYYY-MM-DD`,
-and amounts must be greater than zero.
+Choose **Transaction Management** to open a date-scoped workspace. It starts
+with today as the active date. Change the active date to enter or manage
+historical transactions; adding a transaction uses that active date and does
+not prompt for another date. The active date lasts only for that workspace
+session, and reopening the workspace starts from today again.
 
 Example:
 
 ```text
-=== Smart Expense Tracker ===
-1. Add Income
-2. Add Expense
-...
-===>Choose an option: 2
+=== Transaction Management ===
+Active date: 2026-07-24
+1. Add transaction
+2. View transactions
+3. Update transaction
+4. Delete transaction
+5. Change active date
+6. Browse transaction dates
+7. Return to today
+0. Back
+===>Choose an option: 1
+Choose transaction type: 2
 Amount: 12.50
 Category: Food
 Account: Cash
 Description: Lunch
-Date: 2026-07-24
-Expense saved successfully.
+Transaction T-0001 added for 2026-07-24.
 ```
 
 Use the shown display ID, such as `T-0001`, when updating or deleting a
 transaction. Display-ID lookup ignores surrounding whitespace and letter case,
-but otherwise requires an exact match.
+but otherwise requires an exact match. An update or deletion must be initiated
+from the transaction's active date. Updates may explicitly move the transaction
+to another valid date.
+
+Search supports no date constraint, one exact financial date, or an inclusive
+date range. The Python filtering API also supports one-sided ranges. Results
+are ordered by newest financial date and then ascending numeric display ID.
+Financial Reports provides all-time, daily, and inclusive date-range totals for
+income, expenses, balance, and transaction count.
 
 Choose **Account Management** to add, list, rename, deactivate, or reactivate
 accounts. Accounts use display IDs such as `A-0001`. Deactivation preserves
@@ -136,7 +160,7 @@ python -m pytest -q
 ```
 
 Tests use pytest temporary paths and do not write to application data files.
-The current suite contains 131 passing tests.
+The current suite contains 248 passing tests.
 
 ## JSON persistence
 
@@ -144,6 +168,7 @@ Runtime data is stored in `data/transactions.json`. The stabilized format is:
 
 ```json
 {
+    "schema_version": 2,
     "metadata": {
         "next_display_id": 3
     },
@@ -156,21 +181,27 @@ Runtime data is stored in `data/transactions.json`. The stabilized format is:
             "category": "Food",
             "account": "Cash",
             "description": "Lunch",
-            "date": "2026-07-24"
+            "transaction_date": "2026-07-24",
+            "created_at": "2026-07-24T09:15:00+00:00",
+            "updated_at": "2026-07-24T09:15:00+00:00"
         }
     ]
 }
 ```
 
-The internal `id` is a UUID used to preserve transaction identity. The
-`display_id` is the shorter ID shown to users. Both values remain unchanged
-during an update.
+`transaction_date` is the financial date used by workspaces, search, and
+reports. `created_at` and `updated_at` are optional timezone-aware UTC metadata
+and never select a financial period. The internal `id` is a UUID used to
+preserve transaction identity. The `display_id` is the shorter ID shown to
+users. Both values remain unchanged during an update.
 
 `metadata.next_display_id` is persistent and monotonically advances when a
 transaction is saved. Deleting `T-0003` does not make it available again; the
 next saved transaction uses `T-0004`. Older files containing only a JSON list
 remain readable. Their safe next value is derived from the highest stored
-display ID, and the file is migrated to the metadata format on its next write.
+display ID. Legacy `date` fields map to `transaction_date`; missing historical
+timestamps remain `null` rather than being invented. Reads never migrate data,
+while the next successful mutation writes schema version 2.
 
 A missing or blank data file is treated as an empty dataset. Malformed JSON or
 an invalid top-level structure raises a controlled storage error and is not
@@ -178,6 +209,11 @@ overwritten. Saves are written to a temporary file in the data directory and
 atomically replace the destination with `os.replace` only after the complete
 content is flushed. If writing or replacement fails, the temporary file is
 removed and the previous data file remains intact.
+
+Complete transaction mutations use a cross-process lock. Creation loads the
+latest document, allocates and advances the global display-ID counter, validates
+the candidate document, and writes it atomically while holding one lock.
+Account and category storage remains separate from transaction persistence.
 
 Accounts are stored separately in `data/accounts.json` as one document
 containing display-ID metadata and the account list. This makes an account
@@ -203,12 +239,8 @@ ID. If state is missing, it is recovered from the highest stored category ID.
 - No database, GUI, charts, or multi-currency support
 - No Excel or PDF export
 - No authentication or synchronization
-- Transaction persistence still has no concurrent-writer coordination
 - Accounts and categories are not yet linked to transactions
 - Transactions still store their existing free-text `category` and `account`
   fields; there is no `category_id` or transaction-data migration
-- Transfers, default transaction dates, and Excel import/export are not
-  implemented
-- Transaction JSON validation remains primarily structural; account JSON
-  and category JSON validate field types, UUID and display-ID formats, and
-  uniqueness invariants
+- Transfers and Excel import/export are not implemented
+- Transaction amounts still use `float`; exact `Decimal` money is deferred

@@ -9,7 +9,7 @@ from json_storage import StorageError
 
 
 def test_main_menu_dispatch_opens_category_management(monkeypatch) -> None:
-    choices = iter(["10", "", "0"])
+    choices = iter(["6", "", "0"])
     called = False
 
     def fake_category_menu() -> None:
@@ -17,7 +17,7 @@ def test_main_menu_dispatch_opens_category_management(monkeypatch) -> None:
         called = True
 
     monkeypatch.setattr(builtins, "input", lambda prompt: next(choices))
-    monkeypatch.setitem(main.MENU_ACTIONS, "10", fake_category_menu)
+    monkeypatch.setitem(main.MENU_ACTIONS, "6", fake_category_menu)
 
     main.main()
 

@@ -21,6 +21,19 @@ The format is based on **Keep a Changelog** and follows **Semantic Versioning**.
 - Strict category schema and uniqueness validation
 - Locked category mutations with atomic category-list and counter writes
 - Category Management CLI submenu with numbered Income/Expense selection
+- Date-based Transaction Management with a selected-date workspace that starts
+  on today and supports historical entry
+- Date-scoped add, view, update, and delete workflows, including explicit
+  transaction-date movement and populated-date browsing
+- `TransactionService`, `TransactionRepository`, and
+  `JsonTransactionRepository` boundaries with injected date/time providers
+- Transaction schema version 2 with typed financial dates and optional UTC
+  creation/update metadata
+- Exact-date and inclusive date-range search, including one-sided ranges in the
+  Python API
+- Daily and inclusive date-range reports with transaction counts
+- Deterministic coverage for date policy, clocks, locking, concurrency,
+  compatibility, CLI workspaces, search, and reports
 
 ### Changed
 
@@ -33,6 +46,15 @@ The format is based on **Keep a Changelog** and follows **Semantic Versioning**.
 - Added deterministic category ordering by transaction type and display ID
 - Kept Category Management standalone without changing transaction fields or
   transaction JSON
+- Made `transaction_date` the financial date used by CRUD, search, and reports
+- Moved transaction date/timestamp rules into `TransactionService` and JSON
+  responsibilities into the repository/storage boundary
+- Made search ordering deterministic by newest financial date and ascending
+  numeric display ID
+- Preserved legacy `date` records and missing historical timestamps without
+  rewriting files on read
+- Documented metadata-only updates as explicit update events that advance
+  `updated_at`
 
 ### Fixed
 
@@ -47,6 +69,26 @@ The format is based on **Keep a Changelog** and follows **Semantic Versioning**.
   name
 - Recovered category counter state from stored IDs when the state file is
   missing and rejected malformed or regressed state
+- Prevented concurrent transaction creation from losing records or allocating
+  duplicate display IDs by locking the complete allocation/write sequence
+- Prevented duplicate transaction identities and regressed display-ID metadata
+  from being written by validating complete candidate documents before atomic
+  replacement
+- Preserved transaction UUID, display ID, financial content, and legacy
+  `created_at=None` semantics across updates
+- Rejected future financial dates, ambiguous exact/range queries, and reversed
+  ranges through one shared policy
+
+### Testing
+
+- Confirmed 248 passing pytest tests using disposable transaction paths
+- Confirmed Python compilation, whitespace-safe diffs, and unchanged runtime
+  JSON data
+
+### Documentation
+
+- Updated the README, architecture, decisions, roadmap, test plan, changelog,
+  and current project analysis for Date-based Transaction Management
 
 ---
 

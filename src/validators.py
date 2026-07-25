@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime, timedelta, timezone
 
 
 def validate_amount(amount: str | float | int) -> float:
@@ -13,16 +13,79 @@ def validate_amount(amount: str | float | int) -> float:
     return amount
 
 
-def validate_date(date_input: str) -> str:
-    try:
-        parsed_date = datetime.strptime(
-            date_input.strip(),
-            "%Y-%m-%d",
-        )
-    except ValueError:
-        raise ValueError("Date must be in YYYY-MM-DD format.")
+def validate_transaction_date(value: date | str) -> date:
+    """Return a transaction date, accepting only canonical ISO date strings."""
+    if isinstance(value, datetime):
+        raise ValueError("Transaction date must be a date without a time.")
 
-    return parsed_date.strftime("%Y-%m-%d")
+    if isinstance(value, date):
+        return value
+
+    if not isinstance(value, str):
+        raise ValueError("Transaction date must be in YYYY-MM-DD format.")
+
+    try:
+        parsed_date = date.fromisoformat(value)
+    except ValueError as error:
+        raise ValueError(
+            "Transaction date must be in YYYY-MM-DD format."
+        ) from error
+
+    if parsed_date.isoformat() != value:
+        raise ValueError("Transaction date must be in YYYY-MM-DD format.")
+
+    return parsed_date
+
+
+def validate_utc_datetime(value: datetime, field_name: str) -> datetime:
+    """Validate and normalize an aware UTC datetime."""
+    if not isinstance(value, datetime):
+        raise ValueError(f"{field_name} must be a timezone-aware UTC datetime.")
+
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError(f"{field_name} must be a timezone-aware UTC datetime.")
+
+    if value.utcoffset() != timedelta(0):
+        raise ValueError(f"{field_name} must be a timezone-aware UTC datetime.")
+
+    return value.astimezone(timezone.utc)
+
+
+def parse_utc_datetime(
+    value: datetime | str | None,
+    field_name: str,
+) -> datetime | None:
+    """Parse an optional canonical ISO-8601 UTC timestamp."""
+    if value is None:
+        return None
+
+    if isinstance(value, datetime):
+        return validate_utc_datetime(value, field_name)
+
+    if not isinstance(value, str):
+        raise ValueError(
+            f"{field_name} must be a canonical timezone-aware UTC timestamp."
+        )
+
+    try:
+        parsed_value = datetime.fromisoformat(value)
+    except ValueError as error:
+        raise ValueError(
+            f"{field_name} must be a canonical timezone-aware UTC timestamp."
+        ) from error
+
+    parsed_value = validate_utc_datetime(parsed_value, field_name)
+    if parsed_value.isoformat() != value:
+        raise ValueError(
+            f"{field_name} must be a canonical timezone-aware UTC timestamp."
+        )
+
+    return parsed_value
+
+
+def validate_date(date_input: date | str) -> date:
+    """Backward-compatible name for transaction-date validation."""
+    return validate_transaction_date(date_input)
 
 
 def validate_required_text(value: str, field_name: str) -> str:

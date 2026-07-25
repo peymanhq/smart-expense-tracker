@@ -1,5 +1,7 @@
 """Entry point for the Smart Expense Tracker application."""
 
+from datetime import date
+
 from account_service import (
     activate_account,
     add_account,
@@ -14,83 +16,269 @@ from category_service import (
     list_categories,
     rename_category,
 )
+from clock import TodayProvider, local_today
+from date_policy import ValidatedDateQuery
 from formatter import format_transactions
-from report import calculate_summary, filter_transactions
-from search import find_transaction_by_display_id, search_transactions
-from storage import (
-    StorageError,
-    delete_transaction,
-    get_next_display_id,
-    load_transactions,
-    save_transaction,
-    update_transaction,
+from json_storage import StorageError
+from report import (
+    FinancialSummary,
+    calculate_financial_summary,
+    generate_daily_summary,
+    generate_date_range_summary,
 )
-from transaction_factory import create_transaction
-from validators import validate_date
+from search import filter_transactions, search_transactions
+from transaction_repository import JsonTransactionRepository
+from transaction_service import (
+    FutureTransactionDateError,
+    TransactionActiveDateMismatchError,
+    TransactionNotFoundError,
+    TransactionService,
+)
+from validators import validate_transaction_date
+
+TRANSACTION_TODAY_PROVIDER: TodayProvider = local_today
+TRANSACTION_REPOSITORY = JsonTransactionRepository()
+TRANSACTION_SERVICE = TransactionService(
+    TRANSACTION_REPOSITORY,
+    today_provider=TRANSACTION_TODAY_PROVIDER,
+)
 
 """==============Handles Fanection================"""
 
 
-def handle_add_transaction(transaction_type: str) -> None:
+def _print_transaction_error(error: Exception) -> None:
+    if isinstance(error, StorageError):
+        print(f"Storage error: {error}")
+    else:
+        print(f"Error: {error}")
+
+
+def _choose_transaction_type() -> str | None:
+    print("\nTransaction type:")
+    print("1. Income")
+    print("2. Expense")
+    transaction_type = {
+        "1": "income",
+        "2": "expense",
+    }.get(input("Choose transaction type: ").strip())
+    if transaction_type is None:
+        print("Invalid transaction type choice.")
+    return transaction_type
+
+
+def _selected_transaction_service(
+    service: TransactionService | None,
+) -> TransactionService:
+    return TRANSACTION_SERVICE if service is None else service
+
+
+def _prompt_date_filter(
+    service: TransactionService,
+) -> tuple[bool, ValidatedDateQuery | None]:
+    """Prompt for an independent search/report date without changing workspace."""
+    print("\nDate filter:")
+    print("1. No date filter")
+    print("2. Exact date")
+    print("3. Date range")
+    print("0. Cancel")
+    choice = input("Choose date filter: ").strip()
+
+    if choice == "0" or not choice:
+        print("Search cancelled.")
+        return False, None
+    if choice == "1":
+        return True, service.validate_date_query()
+
     try:
-        display_id = get_next_display_id()
+        if choice == "2":
+            value = input("Enter transaction date (YYYY-MM-DD): ").strip()
+            if not value:
+                print("Search cancelled.")
+                return False, None
+            transaction_date = validate_transaction_date(value)
+            return True, service.validate_date_query(
+                transaction_date=transaction_date,
+            )
+
+        if choice == "3":
+            start_value = input("Start date (YYYY-MM-DD): ").strip()
+            if not start_value:
+                print("Search cancelled.")
+                return False, None
+            end_value = input("End date (YYYY-MM-DD): ").strip()
+            if not end_value:
+                print("Search cancelled.")
+                return False, None
+            start_date = validate_transaction_date(start_value)
+            end_date = validate_transaction_date(end_value)
+            return True, service.validate_date_query(
+                start_date=start_date,
+                end_date=end_date,
+            )
+    except (ValueError, FutureTransactionDateError) as error:
+        _print_transaction_error(error)
+        return False, None
+
+    print("Invalid date filter choice.")
+    return False, None
+
+
+def handle_add_transaction(
+    service: TransactionService,
+    active_date: date,
+) -> None:
+    print(f"Active transaction date: {active_date.isoformat()}")
+    transaction_type = _choose_transaction_type()
+    if transaction_type is None:
+        return
+
+    try:
         amount = input("Amount: ")
         category = input("Category: ")
         account = input("Account: ")
         description = input("Description: ")
-        date = input("Date: ")
 
-        transaction = create_transaction(
+        transaction = service.add_transaction(
+            transaction_date=active_date,
             transaction_type=transaction_type,
             amount=amount,
             category=category,
             account=account,
             description=description,
-            date=date,
-            display_id=display_id,
         )
 
-        save_transaction(transaction)
+        print(
+            f"Transaction {transaction.display_id} added for "
+            f"{transaction.transaction_date.isoformat()}."
+        )
+    except (ValueError, StorageError) as error:
+        _print_transaction_error(error)
 
-        print(f"{transaction_type.title()} saved successfully.")
 
-    except ValueError as error:
-        print(f"Error: {error}")
+def _print_financial_summary(summary: FinancialSummary) -> None:
+    print(f"Total Income : {summary.total_income:.2f}")
+    print(f"Total Expense: {summary.total_expense:.2f}")
+    print(f"Balance      : {summary.balance:.2f}")
+    print(f"Transaction Count: {summary.transaction_count}")
 
 
-def handle_view_balance() -> None:
-    transactions = load_transactions()
-
-    total_income, total_expense, balance = calculate_summary(transactions)
+def handle_view_balance(
+    service: TransactionService | None = None,
+) -> None:
+    service = _selected_transaction_service(service)
+    summary = calculate_financial_summary(service.list_transactions())
 
     print("\n--- Financial Summary ---")
-    print(f"Total Income : {total_income:.2f}")
-    print(f"Total Expense: {total_expense:.2f}")
-    print(f"Balance      : {balance:.2f}")
+    _print_financial_summary(summary)
 
 
-def handle_view_transactions() -> None:
-    transactions = load_transactions()
+def handle_daily_report(
+    service: TransactionService | None = None,
+) -> None:
+    service = _selected_transaction_service(service)
+    value = input("Enter transaction date (YYYY-MM-DD): ").strip()
+    if not value:
+        print("Report cancelled.")
+        return
+
+    try:
+        transaction_date = validate_transaction_date(value)
+        dates = service.validate_date_query(
+            transaction_date=transaction_date,
+        )
+    except (ValueError, FutureTransactionDateError) as error:
+        _print_transaction_error(error)
+        return
+
+    summary = generate_daily_summary(
+        service.list_transactions(),
+        dates.transaction_date,
+    )
+    print(
+        f"\nFinancial report for "
+        f"{dates.transaction_date.isoformat()}"
+    )
+    _print_financial_summary(summary)
+
+
+def handle_date_range_report(
+    service: TransactionService | None = None,
+) -> None:
+    service = _selected_transaction_service(service)
+    start_value = input("Start date (YYYY-MM-DD): ").strip()
+    if not start_value:
+        print("Report cancelled.")
+        return
+    end_value = input("End date (YYYY-MM-DD): ").strip()
+    if not end_value:
+        print("Report cancelled.")
+        return
+
+    try:
+        start_date = validate_transaction_date(start_value)
+        end_date = validate_transaction_date(end_value)
+        dates = service.validate_date_query(
+            start_date=start_date,
+            end_date=end_date,
+        )
+    except (ValueError, FutureTransactionDateError) as error:
+        _print_transaction_error(error)
+        return
+
+    summary = generate_date_range_summary(
+        service.list_transactions(),
+        dates.start_date,
+        dates.end_date,
+    )
+    print(
+        f"\nFinancial report from {dates.start_date.isoformat()} "
+        f"to {dates.end_date.isoformat()}"
+    )
+    _print_financial_summary(summary)
+
+
+def financial_report_menu(
+    service: TransactionService | None = None,
+) -> None:
+    service = _selected_transaction_service(service)
+    print("\n=== Financial Reports ===")
+    print("1. All-time report")
+    print("2. Daily report")
+    print("3. Date-range report")
+    print("0. Back")
+    choice = input("Choose report: ").strip()
+    if choice == "1":
+        handle_view_balance(service)
+    elif choice == "2":
+        handle_daily_report(service)
+    elif choice == "3":
+        handle_date_range_report(service)
+    elif choice != "0":
+        print("Invalid report choice.")
+
+
+def handle_view_transactions(
+    service: TransactionService,
+    active_date: date,
+) -> None:
+    try:
+        transactions = service.list_transactions_by_date(active_date)
+    except (ValueError, StorageError) as error:
+        _print_transaction_error(error)
+        return
 
     if not transactions:
-        print("No transactions found.")
+        print(f"No transactions found for {active_date.isoformat()}.")
         return
-    print(f"\n>>> There are {len(transactions)} Transactions <<<\n")
-    print("================================")
-    for transaction in transactions:
-        print(f"ID: {transaction.display_id}")
-        print(f"Type: {transaction.type}")
-        print(f"Amount: {transaction.amount}")
-        print(f"Category: {transaction.category}")
-        print(f"Account: {transaction.account}")
-        print(f"Description: {transaction.description}")
-        print(f"Date: {transaction.date}")
-        print("\n--------------------")
-    print("================================")
+
+    print(f"\nTransactions for {active_date.isoformat()}")
+    print(format_transactions(transactions))
 
 
-def handle_filter_transactions() -> None:
-    transactions = load_transactions()
+def handle_filter_transactions(
+    service: TransactionService | None = None,
+) -> None:
+    service = _selected_transaction_service(service)
 
     transaction_type = input(
         "Transaction type (income/expense, leave blank for all): "
@@ -103,97 +291,286 @@ def handle_filter_transactions() -> None:
     account = input("Account (leave blank for all): ").strip()
     account = account or None
 
-    start_date = input("Start date YYYY-MM-DD (leave blank for all): ").strip()
-    start_date = start_date or None
+    description = input(
+        "Description text (leave blank for all): "
+    ).strip()
+    description = description or None
 
-    end_date = input("End date YYYY-MM-DD (leave blank for all): ").strip()
-    end_date = end_date or None
-
-    try:
-        if start_date:
-            start_date = validate_date(start_date)
-
-        if end_date:
-            end_date = validate_date(end_date)
-
-    except ValueError as error:
-        print(f"Error: {error}")
+    accepted, dates = _prompt_date_filter(service)
+    if not accepted or dates is None:
         return
 
     results = filter_transactions(
-        transactions,
+        service.list_transactions(),
         transaction_type=transaction_type,
         category=category,
         account=account,
-        start_date=start_date,
-        end_date=end_date,
+        description=description,
+        transaction_date=dates.transaction_date,
+        start_date=dates.start_date,
+        end_date=dates.end_date,
     )
 
     print("\n=== Filtered Transactions ===")
     print(format_transactions(results))
 
 
-def handle_update_transaction() -> None:
-    transactions = load_transactions()
-
+def handle_update_transaction(
+    service: TransactionService,
+    active_date: date,
+) -> None:
+    handle_view_transactions(service, active_date)
     display_id = input("Transaction ID: ").strip().upper()
-
-    transaction = find_transaction_by_display_id(
-        transactions,
-        display_id,
-    )
-
-    if transaction is None:
-        print("Transaction not found.")
+    if not display_id:
+        print("Error: Transaction ID cannot be empty.")
         return
 
-    amount_input = input(f"New Amount [{transaction.amount}]: ").strip()
-    description_input = input(f"New Description [{transaction.description}]: ").strip()
-    type_input = input(f"New Type [{transaction.type}]: ").strip().lower()
-    category_input = input(f"New Category [{transaction.category}]: ").strip()
-    account_input = input(f"New Account [{transaction.account}]: ").strip()
-    date_input = input(f"New Date [{transaction.date}]: ").strip()
+    amount_input = input("New amount [press Enter to keep current]: ").strip()
+    description_input = input(
+        "New description [press Enter to keep current]: "
+    ).strip()
+    type_input = input(
+        "New type (income/expense) [press Enter to keep current]: "
+    ).strip()
+    category_input = input(
+        "New category [press Enter to keep current]: "
+    ).strip()
+    account_input = input(
+        "New account [press Enter to keep current]: "
+    ).strip()
+    print(f"Current transaction date: {active_date.isoformat()}")
+    date_input = input(
+        "New transaction date [press Enter to keep current]: "
+    ).strip()
 
     try:
-        updated_transaction = create_transaction(
-            transaction_type=type_input or transaction.type,
-            amount=amount_input or transaction.amount,
-            category=category_input or transaction.category,
-            account=account_input or transaction.account,
-            description=description_input or transaction.description,
-            date=date_input or transaction.date,
-            transaction_id=transaction.id,
-            display_id=transaction.display_id,
+        new_date = (
+            validate_transaction_date(date_input) if date_input else None
         )
+        updates = {}
+        if type_input:
+            updates["transaction_type"] = type_input
+        if amount_input:
+            updates["amount"] = amount_input
+        if category_input:
+            updates["category"] = category_input
+        if account_input:
+            updates["account"] = account_input
+        if description_input:
+            updates["description"] = description_input
+        if new_date is not None:
+            updates["transaction_date"] = new_date
 
-    except ValueError as error:
-        print(f"Error: {error}")
+        updated = service.update_transaction(
+            display_id,
+            active_date=active_date,
+            **updates,
+        )
+    except (
+        ValueError,
+        StorageError,
+        TransactionNotFoundError,
+        TransactionActiveDateMismatchError,
+    ) as error:
+        _print_transaction_error(error)
         return
 
-    updated = update_transaction(transaction.display_id, updated_transaction)
-    if updated:
-        print("Transaction updated successfully.")
+    if updated.transaction_date != active_date:
+        print(
+            f"Transaction {updated.display_id} updated and moved from "
+            f"{active_date.isoformat()} to "
+            f"{updated.transaction_date.isoformat()}."
+        )
     else:
-        print("Transaction not found.")
+        print(f"Transaction {updated.display_id} updated.")
 
 
-def handle_delete_transaction() -> None:
+def handle_delete_transaction(
+    service: TransactionService,
+    active_date: date,
+) -> None:
+    handle_view_transactions(service, active_date)
     display_id = input("Enter transaction ID: ").strip().upper()
-    deleted = delete_transaction(display_id)
+    if not display_id:
+        print("Error: Transaction ID cannot be empty.")
+        return
+    confirmation = input(
+        f"Delete transaction {display_id}? (y/N): "
+    ).strip().casefold()
+    if confirmation not in {"y", "yes"}:
+        print("Deletion cancelled.")
+        return
 
-    if deleted:
-        print("Transaction deleted successfully.")
-    else:
-        print("Transaction not found.")
+    try:
+        deleted = service.delete_transaction(
+            display_id,
+            active_date=active_date,
+        )
+    except (
+        ValueError,
+        StorageError,
+        TransactionNotFoundError,
+        TransactionActiveDateMismatchError,
+    ) as error:
+        _print_transaction_error(error)
+        return
+
+    print(
+        f"Transaction {deleted.display_id} deleted from "
+        f"{deleted.transaction_date.isoformat()}."
+    )
 
 
-def handle_search() -> None:
-    transactions = load_transactions()
+def handle_change_active_date(
+    service: TransactionService,
+    active_date: date,
+) -> date:
+    date_input = input("Enter transaction date (YYYY-MM-DD): ").strip()
+    if not date_input:
+        print("Active date unchanged.")
+        return active_date
+
+    try:
+        requested_date = validate_transaction_date(date_input)
+        accepted_date = service.validate_transaction_date(requested_date)
+    except (ValueError, FutureTransactionDateError) as error:
+        _print_transaction_error(error)
+        return active_date
+
+    print(f"Active date changed to {accepted_date.isoformat()}.")
+    return accepted_date
+
+
+def handle_browse_transaction_dates(
+    service: TransactionService,
+    active_date: date,
+) -> date:
+    try:
+        summaries = service.list_transaction_date_summaries()
+    except StorageError as error:
+        _print_transaction_error(error)
+        return active_date
+
+    if not summaries:
+        print("No transaction dates found.")
+        return active_date
+
+    print("\nDates with transactions")
+    for index, summary in enumerate(summaries, start=1):
+        label = (
+            "transaction"
+            if summary.transaction_count == 1
+            else "transactions"
+        )
+        print(
+            f"{index}. {summary.transaction_date.isoformat()} — "
+            f"{summary.transaction_count} {label}"
+        )
+    print("0. Cancel")
+
+    selection = input("Choose a date: ").strip()
+    if selection == "0" or not selection:
+        print("Active date unchanged.")
+        return active_date
+    try:
+        selected_index = int(selection)
+    except ValueError:
+        print("Invalid date selection.")
+        return active_date
+    if not 1 <= selected_index <= len(summaries):
+        print("Invalid date selection.")
+        return active_date
+
+    try:
+        selected_date = service.validate_transaction_date(
+            summaries[selected_index - 1].transaction_date
+        )
+    except FutureTransactionDateError as error:
+        _print_transaction_error(error)
+        return active_date
+    print(f"Active date changed to {selected_date.isoformat()}.")
+    return selected_date
+
+
+def pause_transaction_management() -> None:
+    input("\nPress Enter to return to Transaction Management...")
+
+
+def transaction_management_menu(
+    service: TransactionService | None = None,
+    today_provider: TodayProvider | None = None,
+) -> None:
+    service = TRANSACTION_SERVICE if service is None else service
+    today_provider = (
+        TRANSACTION_TODAY_PROVIDER
+        if today_provider is None
+        else today_provider
+    )
+    active_date = service.validate_transaction_date(today_provider())
+
+    while True:
+        print("\n=== Transaction Management ===")
+        print(f"Active date: {active_date.isoformat()}")
+        print("1. Add transaction")
+        print("2. View transactions")
+        print("3. Update transaction")
+        print("4. Delete transaction")
+        print("5. Change active date")
+        print("6. Browse transaction dates")
+        print("7. Return to today")
+        print("0. Back")
+
+        choice = input("\n===>Choose an option: ").strip()
+        if choice == "0":
+            return
+
+        if choice == "1":
+            handle_add_transaction(service, active_date)
+        elif choice == "2":
+            handle_view_transactions(service, active_date)
+        elif choice == "3":
+            handle_update_transaction(service, active_date)
+        elif choice == "4":
+            handle_delete_transaction(service, active_date)
+        elif choice == "5":
+            active_date = handle_change_active_date(service, active_date)
+        elif choice == "6":
+            active_date = handle_browse_transaction_dates(
+                service,
+                active_date,
+            )
+        elif choice == "7":
+            try:
+                active_date = service.validate_transaction_date(
+                    today_provider()
+                )
+                print(
+                    f"Active date reset to {active_date.isoformat()}."
+                )
+            except ValueError as error:
+                _print_transaction_error(error)
+        else:
+            print("Invalid choice. Please try again.")
+            continue
+
+        pause_transaction_management()
+
+
+def handle_search(
+    service: TransactionService | None = None,
+) -> None:
+    service = _selected_transaction_service(service)
     search_key = input("Enter search term: ")
+    accepted, dates = _prompt_date_filter(service)
+    if not accepted or dates is None:
+        return
 
     results = search_transactions(
-        transactions=transactions,
+        transactions=service.list_transactions(),
         search_key=search_key,
+        transaction_date=dates.transaction_date,
+        start_date=dates.start_date,
+        end_date=dates.end_date,
     )
 
     if not results:
@@ -364,16 +741,12 @@ def category_management_menu() -> None:
 
 """=================Menu dic========================"""
 MENU_ACTIONS = {
-    "1": lambda: handle_add_transaction("income"),
-    "2": lambda: handle_add_transaction("expense"),
-    "3": handle_view_transactions,
-    "4": handle_view_balance,
-    "5": handle_filter_transactions,
-    "6": handle_delete_transaction,
-    "7": handle_update_transaction,
-    "8": handle_search,
-    "9": account_management_menu,
-    "10": category_management_menu,
+    "1": transaction_management_menu,
+    "2": financial_report_menu,
+    "3": handle_filter_transactions,
+    "4": handle_search,
+    "5": account_management_menu,
+    "6": category_management_menu,
 }
 
 """=================Main fanection=================="""
@@ -387,16 +760,12 @@ def main() -> None:
 
     while True:
         print("\n\n=== Smart Expense Tracker ===")
-        print("1. Add Income")
-        print("2. Add Expense")
-        print("3. View Transactions")
-        print("4. View Balance")
-        print("5. Filter Transactions")
-        print("6. Delet Transaction")
-        print("7. Update Transaction")
-        print("8. search")
-        print("9. Account Management")
-        print("10. Category Management")
+        print("1. Transaction Management")
+        print("2. Financial Reports")
+        print("3. Filter Transactions")
+        print("4. Search")
+        print("5. Account Management")
+        print("6. Category Management")
         print("0. Exit")
 
         choice = input("\n===>Choose an option: ")
