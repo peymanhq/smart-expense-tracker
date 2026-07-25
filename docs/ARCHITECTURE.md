@@ -26,9 +26,13 @@ main.py
   ├── category_service.py
   │     ├── category_storage.py
   │     └── category.py
-  ├── transaction_factory.py
+  ├── transaction_service.py
+  │     ├── transaction_repository.py
+  │     │     └── storage.py
+  │     ├── transaction_factory.py
+  │     ├── clock.py
+  │     └── date_policy.py
   ├── validators.py
-  ├── storage.py
   ├── report.py
   ├── search.py
   ├── formatter.py
@@ -51,17 +55,23 @@ main.py
 | `category_service.py` | Category validation, listing, and mutation rules |
 | `category_storage.py` | Validated, locked category-list and counter persistence |
 | `json_storage.py` | Shared atomic JSON writing |
-| `transaction.py` | Transaction data model |
+| `transaction.py` | Typed, passive Transaction data model |
 | `transaction_factory.py` | Transaction creation |
+| `transaction_service.py` | Transaction workflows, date rules, and timestamp behavior |
+| `transaction_repository.py` | Repository protocol and JSON implementation |
+| `clock.py` | Default and injectable today/UTC clock providers |
+| `date_policy.py` | Shared exact/range shape and future-date policy |
 | `validators.py` | Input validation |
-| `storage.py` | JSON persistence |
-| `report.py` | Financial calculations and transaction filtering |
-| `search.py` | Transaction search and display-ID lookup |
+| `storage.py` | Versioned schema handling, locking, validation, and JSON persistence |
+| `report.py` | Pure financial aggregation over selected transactions |
+| `search.py` | Pure date/text filtering, ordering, and display-ID lookup |
 | `formatter.py` | Terminal formatting |
 | `id_generator.py` | UUID creation and display-ID formatting, parsing, and legacy-state calculation |
 
-`main.py` currently coordinates update and deletion workflows; there is no
-separate `update.py` module.
+`main.py` owns terminal interaction and date-workspace session state.
+`TransactionService` coordinates transaction workflows without terminal or
+JSON access. `TransactionRepository` isolates the application layer from the
+current JSON implementation.
 
 Account workflows use a focused application-service module so their business
 rules remain independent of CLI input and output.
@@ -75,25 +85,34 @@ independent of transaction creation.
 
 ### Transaction Creation
 
-1. `main.py` asks `storage.py` for the next persisted display ID.
-2. `transaction_factory.py` validates and normalizes input through
-   `validators.py`.
-3. The factory creates a `Transaction` with an internal UUID and user-facing
-   display ID.
-4. `storage.py` appends the transaction, advances the display-ID metadata, and
-   atomically writes the document.
+1. `main.py` passes the active financial date and entered values to
+   `TransactionService`.
+2. The service applies the shared future-date policy, obtains one injected UTC
+   timestamp, and uses `transaction_factory.py` for validation and construction.
+3. `JsonTransactionRepository` acquires the transaction lock and loads the
+   latest document.
+4. Under that same lock, it allocates the next global display ID, appends the
+   transaction, advances metadata, validates the complete candidate document,
+   and invokes the shared atomic JSON writer.
+
+The CLI does not allocate display IDs, access transaction JSON, or generate
+timestamps.
 
 ### Search, Update, and Deletion
 
-`search.py` provides `find_transaction_by_display_id()`, the shared lookup used
-by the CLI update flow and by storage update and deletion operations. It trims
-whitespace, compares case-insensitively, and requires an exact display-ID
-match. General search also includes the display ID among its searchable fields.
+The Transaction Management workspace keeps an active date local to one menu
+session. It defaults to the injected today, may select an empty historical
+date, can browse populated dates, and resets when reopened.
 
-During an update, storage finds the current transaction again, preserves its
-internal UUID and display ID, and replaces only its editable data. The boolean
-update result is checked by the CLI so a missing transaction is not reported as
-successfully updated.
+For update and deletion, `TransactionService` first performs a global
+display-ID lookup so not-found and outside-active-date errors remain distinct.
+Repository mutations then operate by stable internal UUID under a complete
+read-modify-write lock. Updates preserve UUID, display ID, and `created_at`,
+advance `updated_at`, and may explicitly change `transaction_date`.
+
+`search.py` applies exact, inclusive closed-range, and one-sided-range financial
+date selection with AND semantics. `report.py` reuses that pure selection logic
+before aggregation. Neither module consults the clock.
 
 ### Account Management
 
@@ -128,6 +147,7 @@ The current document structure is:
 
 ```json
 {
+    "schema_version": 2,
     "metadata": {
         "next_display_id": 3
     },
@@ -140,23 +160,34 @@ The current document structure is:
             "category": "Food",
             "account": "Cash",
             "description": "Lunch",
-            "date": "2026-07-24"
+            "transaction_date": "2026-07-24",
+            "created_at": "2026-07-24T09:15:00+00:00",
+            "updated_at": "2026-07-24T09:15:00+00:00"
         }
     ]
 }
 ```
 
-`metadata.next_display_id` is a persistent monotonic counter. Deleting the
+`transaction_date` is the financial date. The optional `created_at` and
+`updated_at` fields are timezone-aware UTC metadata and are not used for
+financial period selection.
+
+`metadata.next_display_id` is a persistent global monotonic counter. Deleting the
 highest transaction does not decrease it, so a deleted display ID is not
 reused. Legacy files whose top level is a transaction list remain readable;
 their next safe value is derived from the highest valid display ID, and they
-are migrated to the current structure on the next write.
+are migrated to schema version 2 on the next successful mutation. Missing
+schema metadata is version 1. Legacy `date` maps to `transaction_date`;
+historical missing timestamps remain `None`, and reads never rewrite files.
 
 Missing and empty files represent an empty dataset. Malformed JSON, invalid
 top-level structures, invalid metadata, and malformed transaction entries
 raise a controlled `StorageError`.
 
-Writes use a temporary file in the destination directory. Storage serializes
+Complete create, replace, delete, and retained compatibility mutations use a
+re-entrant cross-process lock. Duplicate internal IDs, duplicate display IDs,
+and a counter behind existing IDs are rejected before a write. Writes use a
+temporary file in the destination directory. Storage serializes
 and flushes the full document, calls `os.fsync`, and then uses `os.replace` for
 an atomic destination replacement. A failed write removes its temporary file
 and leaves the previous destination content unchanged.
@@ -194,11 +225,15 @@ Complete mutations run under a re-entrant cross-process category lock.
 The current version separates terminal interaction (`main.py`), validation
 (`validators.py`), account operations (`account_service.py`), category
 operations (`category_service.py`), data records (`account.py`, `category.py`,
-and `transaction.py`), transaction construction
-(`transaction_factory.py`), lookup and search (`search.py`), reporting
-(`report.py`), formatting (`formatter.py`), and persistence. `main.py` remains
-the transaction workflow coordinator, while Account and Category Management
-use focused application-service boundaries.
+and `transaction.py`), transaction application workflows
+(`transaction_service.py`), repository abstraction and JSON implementation
+(`transaction_repository.py`), construction (`transaction_factory.py`),
+lookup/search (`search.py`), reporting (`report.py`), formatting
+(`formatter.py`), and persistence infrastructure. Account and Category
+Management remain standalone and are not coupled to transaction persistence.
+
+Replacing JSON later requires another `TransactionRepository` implementation;
+the transaction service and CLI workflow do not need direct storage changes.
 
 ---
 

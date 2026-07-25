@@ -9,7 +9,7 @@ def format_transaction(transaction: Transaction) -> str:
         f"Category: {transaction.category}\n"
         f"Account: {transaction.account}\n"
         f"Description: {transaction.description}\n"
-        f"Date: {transaction.date}\n"
+        f"Date: {transaction.transaction_date.isoformat()}\n"
         "======================================"
     )
 
@@ -19,5 +19,4 @@ def format_transactions(transactions: list[Transaction]) -> str:
         return "No matching transactions found."
 
     return "\n".join(format_transaction(transaction) for transaction in transactions)
-
 

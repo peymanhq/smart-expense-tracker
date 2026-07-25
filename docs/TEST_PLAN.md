@@ -26,21 +26,38 @@ files. Automated and manual verification therefore protect the real
 The current v1.1.0 development suite completes successfully:
 
 ```text
-131 passed
+248 passed
 ```
 
 The pytest suite covers:
 
 - Valid transaction creation and normalization
+- Deterministic injected today and timezone-aware UTC clock behavior
+- Same-timestamp creation metadata and advancing update metadata
+- Shared future-date, exact-date, and range validation
+- Date-scoped transaction creation, listing, update, deletion, and movement
+- Active-date mismatch versus global not-found error behavior
+- Selected-date workspace defaults, reset behavior, cancellation, and empty dates
+- Populated-date browsing, counts, ordering, and singular/plural output
 - Validation failures for amount, transaction type, category, account, and date
-- Saving and loading the current metadata-based JSON structure
+- Saving and loading transaction schema version 2
+- Missing schema version, legacy top-level lists, and legacy `date` compatibility
+- Matching/conflicting legacy and current date fields
+- Preservation of missing legacy timestamps during load and update
+- Unsupported future schemas and malformed-record rejection without rewriting
 - Initial display-ID formatting, parsing, and sequence calculation
 - Persistent display-ID advancement and non-reuse after deletion
+- Complete create/replace/delete and compatibility mutation locking
+- Concurrent creation without lost records or duplicate display IDs
+- Duplicate internal/display IDs and regressed counter rejection
 - Exact, whitespace-tolerant, case-insensitive display-ID lookup
 - Successful update and not-found behavior
 - Preservation of internal UUID and display ID during updates
 - Successful and unsuccessful deletion
-- Income, expense, balance, and empty-report calculations
+- Exact-date, inclusive closed-range, and one-sided API search
+- AND-composed filters and deterministic date/display-ID ordering
+- Financial-date selection independent of creation timestamps
+- All-time, daily, range, and empty-period report calculations
 - Missing and empty data files
 - Malformed JSON and structurally invalid documents
 - Legacy list-only JSON loading and migration on the next write
@@ -93,17 +110,21 @@ python -m pytest -q
 
 # Manual and Release Verification
 
-The v1.0.0 release-candidate verification also confirmed:
+The Date-based Transaction Management verification also confirms:
 
 1. Python source and tests compile successfully.
 2. `git diff --check` completes successfully.
-3. The CLI starts and exits normally.
-4. An add/delete/add sequence advances the display ID.
-5. Deleting the highest display ID does not make it reusable.
-6. The repository's legacy list-only JSON shape loads successfully.
-7. A simulated failed `os.replace` leaves the previous file unchanged and
+3. The selected-date CLI workspace starts and resets to injected today.
+4. Today and historical add/view/update/delete workflows use the active date.
+5. Transaction movement, future-date rejection, and active-date mismatch
+   messages behave as specified.
+6. Exact/range search and all-time/daily/range reports select financial dates.
+7. Add/delete/add advances the display ID without reuse.
+8. Legacy list-only JSON loads without inventing timestamps.
+9. A simulated failed `os.replace` leaves the previous file unchanged and
    removes its temporary file.
-8. `data/transactions.json` remains unchanged throughout verification.
+10. All persistence and CLI tests use disposable paths or in-memory fakes.
+11. Runtime files under `data/` remain unchanged throughout verification.
 
 ---
 
@@ -120,11 +141,10 @@ The v1.0.0 release-candidate verification also confirmed:
 
 # Future Testing
 
-The next planned development version, v1.1.0, includes continuous integration,
-broader workflow coverage, and quality tooling. Future interfaces such as a GUI
-or Telegram bot will require end-to-end tests. SQLite, import/export, and
-integration-specific tests remain future work and are not part of the v1.0.0
-release candidate.
+Continuous integration and quality tooling remain planned. Future interfaces
+such as a GUI or Telegram bot will require end-to-end tests. SQLite,
+account/category transaction references, Decimal money, import/export, and
+integration-specific tests remain future work.
 
 ---
 

@@ -57,22 +57,30 @@ In development.
 - Add, view, rename, activate, and deactivate category workflows
 - Persistent category UUIDs and monotonic `C-####` display-ID state
 - Strict category schema validation and locked category mutations
+- Date-based Transaction Management
+- Selected-date transaction workspace with today and historical entry
+- Date-scoped add, view, update, and delete with explicit date movement
+- Populated-date browsing
+- Transaction application service and repository abstraction
+- Schema-versioned, backward-compatible transaction JSON
+- Locked transaction mutations and atomic monotonic display-ID allocation
+- Exact-date and inclusive date-range search
+- Daily and inclusive date-range financial reports
+- Deterministic clock injection and shared future-date policy
 
 ## Planned Work
 
-- Application service layer
-- Repository abstraction
 - Replace `float` with `Decimal`
 - Better exception hierarchy
-- Improve dependency injection
 - Refactor `main.py`
 - Better project packaging
 - Continuous Integration (CI)
 
-Category selection during transaction entry, a `category_id` transaction
-field, migration of existing free-text category values, account/category
-integration with transactions, transfers, default transaction dates, and Excel
-import/export remain future work. Version 1.1.0 is still in development.
+Category selection during transaction entry, a `category_id` or `account_id`
+transaction field, migration of existing free-text values, account/category
+integration with transactions, transfers, Decimal money, Excel/PDF export,
+charts/dashboard, SQLite, multiple currencies, multiple accounts, and a GUI
+remain future work. Version 1.1.0 is still in development.
 
 ---
 

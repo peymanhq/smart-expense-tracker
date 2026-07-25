@@ -469,3 +469,158 @@ stored `C-####` ID.
 - Concurrent mutations do not silently lose records or duplicate identifiers.
 - Corrupt category records or state fail with controlled `StorageError`.
 - There is no unnecessary legacy Category format.
+
+---
+
+# ADR-017
+
+## Title
+
+Use `transaction_date` as the financial date.
+
+## Status
+
+Accepted
+
+## Decision
+
+Store a typed `datetime.date` as `transaction_date` and use it for transaction
+workspaces, search, and reports. Reject future financial dates through one
+shared application policy. Treat `created_at` and `updated_at` only as optional
+timezone-aware UTC metadata.
+
+## Consequences
+
+- Historical entry and date movement are explicit.
+- Metadata timestamps never determine a reporting period.
+- Existing legacy `date` values map to `transaction_date`.
+- Missing historical timestamps remain missing and are never invented.
+- `float` money remains unchanged; conversion to `Decimal` is separate work.
+
+---
+
+# ADR-018
+
+## Title
+
+Keep the active transaction date as UI session state.
+
+## Status
+
+Accepted
+
+## Decision
+
+The Transaction Management workspace starts from an injected today provider.
+Its active date is local to one menu session, is never persisted, and resets by
+re-evaluating the provider when the workspace is reopened or Return to today is
+selected.
+
+## Consequences
+
+Empty historical dates can be selected without creating data. Cancelled or
+invalid actions do not alter the active date.
+
+---
+
+# ADR-019
+
+## Title
+
+Use a transaction application service and repository boundary.
+
+## Status
+
+Accepted
+
+## Decision
+
+`TransactionService` owns application date policy and timestamp behavior.
+`TransactionRepository` defines persistence operations, and
+`JsonTransactionRepository` implements them with the existing flat JSON
+document, storage lock, schema compatibility, display-ID allocation, and atomic
+writer.
+
+## Consequences
+
+The CLI does not allocate IDs, generate timestamps, or access JSON. A future
+SQLite implementation can replace the repository without moving storage rules
+into the CLI. Account and category UUID integration remains separate future
+work.
+
+---
+
+# ADR-020
+
+## Title
+
+Lock complete transaction mutations and retain global monotonic display IDs.
+
+## Status
+
+Accepted
+
+## Decision
+
+Create, replace, delete, and retained compatibility mutations hold one
+cross-process lock across their complete read-modify-write operation. Creation
+loads the latest document, allocates from `metadata.next_display_id`, appends,
+advances the counter, validates the candidate, and atomically writes while
+still locked. Display IDs remain global across all financial dates.
+
+## Consequences
+
+Deleted IDs are never reused. Concurrent creation does not lose records or
+duplicate display IDs. Duplicate identities and regressed counter state fail
+before replacement. Flat JSON storage is retained for this development
+version; SQLite remains planned.
+
+---
+
+# ADR-021
+
+## Title
+
+Use inclusive financial-date queries with deterministic ordering.
+
+## Status
+
+Accepted
+
+## Decision
+
+Exact-date and range criteria are mutually exclusive. Ranges include both
+boundaries; the Python API also accepts one-sided ranges. Search combines all
+criteria with AND semantics and orders results by newest `transaction_date`,
+then ascending numeric display ID.
+
+## Consequences
+
+Search and reports share the same pure date-selection policy. Reversed ranges
+and future query boundaries are rejected before loading data in application
+workflows.
+
+---
+
+# ADR-022
+
+## Title
+
+Advance metadata time on every explicit update request.
+
+## Status
+
+Accepted
+
+## Decision
+
+Calling `TransactionService.update_transaction()` is an update event even when
+no editable field value is supplied. It preserves financial content,
+transaction UUID, display ID, and `created_at`, and advances only `updated_at`.
+For legacy records, `created_at=None` remains `None`.
+
+## Consequences
+
+CLI submissions containing no field changes are recorded consistently as
+metadata-only updates. Callers that do not intend an update should not invoke
+the method.
