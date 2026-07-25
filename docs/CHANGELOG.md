@@ -15,6 +15,12 @@ The format is based on **Keep a Changelog** and follows **Semantic Versioning**.
 - Separate atomic JSON persistence for account records and display-ID state
 - Account Management CLI submenu
 - Focused automated coverage for account rules and persistence
+- Standalone income/expense category creation, listing, renaming, activation,
+  and deactivation
+- Internal category UUIDs and persistent `C-0001` display IDs
+- Strict category schema and uniqueness validation
+- Locked category mutations with atomic category-list and counter writes
+- Category Management CLI submenu with numbered Income/Expense selection
 
 ### Changed
 
@@ -24,6 +30,9 @@ The format is based on **Keep a Changelog** and follows **Semantic Versioning**.
 - Added automatic migration from legacy account-list and state files
 - Normalized account display-ID input and Unicode account names
 - Paused after account operations until the user returns to the submenu
+- Added deterministic category ordering by transaction type and display ID
+- Kept Category Management standalone without changing transaction fields or
+  transaction JSON
 
 ### Fixed
 
@@ -33,6 +42,11 @@ The format is based on **Keep a Changelog** and follows **Semantic Versioning**.
 - Prevented concurrent account operations from losing data or reusing IDs
 - Rejected malformed fields, invalid UUIDs, and duplicate account identifiers
 - Converted invalid UTF-8 and lock-setup failures into controlled storage errors
+- Prevented concurrent category additions from losing records or reusing IDs
+- Prevented category activation when it would duplicate an active same-type
+  name
+- Recovered category counter state from stored IDs when the state file is
+  missing and rejected malformed or regressed state
 
 ---
 

@@ -7,12 +7,14 @@ workflows without requiring a database or external service.
 ## Version status
 
 **Smart Expense Tracker v1.0.0** is the published stable baseline. Development
-of **v1.1.0** is in progress, beginning with standalone Account Management.
+of **v1.1.0** is in progress. Standalone Account Management and standalone
+Category Management are implemented; the rest of v1.1.0 is not complete.
 
 ## Features
 
 - Add income and expense transactions
 - Add, view, rename, deactivate, and reactivate accounts
+- Add, view, rename, activate, and deactivate income/expense categories
 - View, search, and filter transactions
 - Update or delete a transaction by its display ID
 - Calculate total income, total expense, and current balance
@@ -31,6 +33,9 @@ smart-expense-tracker/
 │   ├── account.py           # Account dataclass
 │   ├── account_service.py   # Account validation and business operations
 │   ├── account_storage.py   # Validated, locked account JSON persistence
+│   ├── category.py          # Category dataclass
+│   ├── category_service.py  # Category validation and business operations
+│   ├── category_storage.py  # Validated, locked category JSON persistence
 │   ├── json_storage.py      # Shared atomic JSON writer
 │   ├── storage.py           # JSON loading, validation, and atomic saving
 │   ├── formatter.py         # Transaction display formatting
@@ -113,6 +118,17 @@ resolved.
 Account display-ID input ignores surrounding whitespace, letter case, and
 zero-padding differences, so values such as `a-1` resolve to `A-0001`.
 
+Choose **Category Management** to add, list, rename, activate, or deactivate
+standalone income and expense categories. Categories use persistent display
+IDs such as `C-0001`. The CLI uses a numbered Income/Expense choice, and list
+output is ordered by transaction type and then display ID.
+
+Only active category names must be unique within the same transaction type,
+using trimmed, Unicode-normalized, case-insensitive comparison. `Food /
+expense` and `Food / income` may coexist. An inactive name may be reused or
+renamed to match an active category, but activation is blocked while an active
+category of the same type has that name.
+
 ## Running tests
 
 ```bash
@@ -120,7 +136,7 @@ python -m pytest -q
 ```
 
 Tests use pytest temporary paths and do not write to application data files.
-The current suite contains 74 passing tests.
+The current suite contains 131 passing tests.
 
 ## JSON persistence
 
@@ -173,6 +189,14 @@ The earlier list-only `accounts.json` and companion `accounts_state.json`
 format remains readable. Its highest safe next ID is preserved and migrated
 into the single-document format on the next successful account save.
 
+Categories start with the current format: `data/categories.json` is a JSON list
+of category objects, and `data/categories_state.json` stores the monotonic
+`next_display_id` counter. There is no invented legacy Category format. Both
+files use atomic replacement, and complete category read-modify-write
+operations use a file lock. Counter state is written before a newly allocated
+record, so a failed save may leave an intentional ID gap but cannot reuse an
+ID. If state is missing, it is recovered from the highest stored category ID.
+
 ## Known limitations
 
 - Local, single-user command-line application only
@@ -180,6 +204,11 @@ into the single-document format on the next successful account save.
 - No Excel or PDF export
 - No authentication or synchronization
 - Transaction persistence still has no concurrent-writer coordination
-- Accounts are not yet linked to transactions; transfers are not supported
+- Accounts and categories are not yet linked to transactions
+- Transactions still store their existing free-text `category` and `account`
+  fields; there is no `category_id` or transaction-data migration
+- Transfers, default transaction dates, and Excel import/export are not
+  implemented
 - Transaction JSON validation remains primarily structural; account JSON
-  validates field types, UUID and display-ID formats, and uniqueness invariants
+  and category JSON validate field types, UUID and display-ID formats, and
+  uniqueness invariants

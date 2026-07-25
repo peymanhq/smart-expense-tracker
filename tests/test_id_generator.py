@@ -2,10 +2,13 @@ import pytest
 
 from id_generator import (
     calculate_next_account_display_id,
+    calculate_next_category_display_id,
     calculate_next_display_id,
     generate_account_display_id,
+    generate_category_display_id,
     generate_display_id,
     parse_account_display_id,
+    parse_category_display_id,
     parse_display_id,
 )
 
@@ -31,3 +34,10 @@ def test_account_display_id_generation_parsing_and_sequence() -> None:
     assert parse_account_display_id(" a-0042 ") == 42
     assert parse_account_display_id("T-0042") is None
     assert calculate_next_account_display_id(["A-0002", "A-0007"]) == 8
+
+
+def test_category_display_id_generation_parsing_and_sequence() -> None:
+    assert generate_category_display_id(1) == "C-0001"
+    assert parse_category_display_id(" c-0042 ") == 42
+    assert parse_category_display_id("A-0042") is None
+    assert calculate_next_category_display_id(["C-0002", "C-0007"]) == 8

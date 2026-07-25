@@ -26,7 +26,7 @@ files. Automated and manual verification therefore protect the real
 The current v1.1.0 development suite completes successfully:
 
 ```text
-74 passed
+131 passed
 ```
 
 The pytest suite covers:
@@ -66,6 +66,22 @@ The pytest suite covers:
 - Legacy account-list and state migration to the atomic document format
 - Complete-document preservation after a failed account save
 - Preservation of deactivated account records in storage
+- Category name trimming, Unicode normalization, required-name validation, and
+  canonical lowercase transaction types
+- Active category-name uniqueness within transaction type, cross-type reuse,
+  inactive-name reuse, and activation conflict protection
+- Sequential persistent category display IDs, non-reuse, missing-state
+  recovery, and malformed or regressed state rejection
+- Category list saving/loading, missing/blank files, malformed JSON, invalid
+  UTF-8, controlled directory errors, and failed atomic replacement
+- Strict Category field, UUID, display-ID, transaction-type, boolean, exact
+  field-set, identifier, and active-name validation
+- Category rename, activate, and deactivate results with identity, type, and
+  activity-state preservation
+- Deterministic Category listing and normalized exact display-ID lookup
+- Concurrent category additions without duplicate IDs or lost updates
+- Category Management main-menu dispatch, numbered type choice, view
+  formatting, submenu Back behavior, and controlled service/storage errors
 
 Run the suite from the repository root:
 

@@ -23,6 +23,9 @@ main.py
   ├── account_service.py
   │     ├── account_storage.py
   │     └── account.py
+  ├── category_service.py
+  │     ├── category_storage.py
+  │     └── category.py
   ├── transaction_factory.py
   ├── validators.py
   ├── storage.py
@@ -33,7 +36,7 @@ main.py
   └── json_storage.py
         │
         ▼
-  accounts.json / transactions.json
+  accounts.json / categories.json / categories_state.json / transactions.json
 ```
 
 ### Module Responsibilities
@@ -44,6 +47,9 @@ main.py
 | `account.py` | Account data model |
 | `account_service.py` | Account validation and add, rename, deactivate, and activate rules |
 | `account_storage.py` | Validated, locked account persistence and legacy migration |
+| `category.py` | Passive standalone Category data model |
+| `category_service.py` | Category validation, listing, and mutation rules |
+| `category_storage.py` | Validated, locked category-list and counter persistence |
 | `json_storage.py` | Shared atomic JSON writing |
 | `transaction.py` | Transaction data model |
 | `transaction_factory.py` | Transaction creation |
@@ -59,6 +65,9 @@ separate `update.py` module.
 
 Account workflows use a focused application-service module so their business
 rules remain independent of CLI input and output.
+
+Category workflows use the same focused service boundary and remain
+independent of transaction creation.
 
 ---
 
@@ -99,6 +108,17 @@ record unless it would create duplicate active names. Inactive names are
 intentionally reusable: a new account or inactive-account rename may match an
 active name, but the inactive account cannot be reactivated until the conflict
 is resolved.
+
+### Category Management
+
+`category_service.py` trims and NFC-normalizes names, canonicalizes transaction
+types to `income` or `expense`, and returns explicit operation results for add,
+rename, activate, and deactivate behavior. Active-name uniqueness is scoped by
+transaction type and compared case-insensitively. Inactive names may be reused;
+activation is rejected if it would conflict with an active category of the
+same type. Listing is deterministic: transaction type, then numeric display ID.
+Display-ID lookup follows Account Management normalization while still
+requiring an exact complete category ID.
 
 ---
 
@@ -155,17 +175,30 @@ The previous list-only account file and companion `accounts_state.json` remain
 readable and migrate on the next save. Accounts remain standalone and do not
 alter the v1.0 transaction JSON schema.
 
+Categories use a current list-only `data/categories.json` document and a
+separate `data/categories_state.json` counter. No legacy Category format is
+needed because there is no production Category data to migrate. Storage
+validates exact fields, canonical UUIDs and `C-####` display IDs, NFC names,
+lowercase transaction types, real boolean status, identifier uniqueness, and
+active-name uniqueness within each transaction type. State cannot be lower
+than the next value derived from stored IDs; a missing state file is safely
+recovered from the records. Each file uses same-directory atomic replacement.
+State advancement precedes persistence of a newly allocated record, so a
+failed second write can create a harmless ID gap but cannot cause reuse.
+Complete mutations run under a re-entrant cross-process category lock.
+
 ---
 
 ## Separation of Responsibilities
 
 The current version separates terminal interaction (`main.py`), validation
-(`validators.py`), account operations (`account_service.py`), data records
-(`account.py` and `transaction.py`), transaction construction
+(`validators.py`), account operations (`account_service.py`), category
+operations (`category_service.py`), data records (`account.py`, `category.py`,
+and `transaction.py`), transaction construction
 (`transaction_factory.py`), lookup and search (`search.py`), reporting
 (`report.py`), formatting (`formatter.py`), and persistence. `main.py` remains
-the transaction workflow coordinator, while Account Management introduces the
-first focused application-service boundary.
+the transaction workflow coordinator, while Account and Category Management
+use focused application-service boundaries.
 
 ---
 
