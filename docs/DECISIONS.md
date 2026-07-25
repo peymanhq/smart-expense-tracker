@@ -666,7 +666,22 @@ mutations write those missing references explicitly as JSON `null`.
 Internal UUIDs are durable references. Account and Category display IDs remain
 interaction identifiers and are not persisted as transaction foreign keys.
 Inactive referenced records will remain resolvable for historical transactions
-when managed resolution is introduced.
+through status-independent UUID lookup.
+
+Each reference is managed independently. A supplied UUID requires its lookup
+dependency, must resolve to an active record for a new selection, and replaces
+the corresponding caller text with the managed record's current name. An
+omitted reference retains legacy free-text behavior for that field.
+
+Updates preserve omitted managed references and snapshots without requiring
+active revalidation. Direct snapshot-only edits on preserved managed references
+are rejected; changing the managed record requires a new UUID. Explicit
+reference clearing remains unsupported.
+
+When transaction type changes, a newly selected category is validated against
+the new type. If an existing managed category is preserved, it is resolved
+including inactive records and must match the new type. Legacy transactions
+with `category_id=None` retain their free-text compatibility behavior.
 
 ## Consequences
 
@@ -674,7 +689,8 @@ when managed resolution is introduced.
 - Snapshot-only transaction creation remains valid during the integration
   transition.
 - Updating unrelated transaction fields preserves existing reference UUIDs.
-- Managed existence, active-state, and category/type enforcement are not yet
-  implemented.
+- Newly supplied managed references enforce existence, active status, and
+  category/type compatibility in `TransactionService`.
+- Historical inactive references remain valid when they are not being changed.
 - CLI Account and Category selection and legacy reconciliation remain future
   work.

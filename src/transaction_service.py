@@ -1,7 +1,10 @@
 """Application workflows for date-scoped transaction management."""
 
+from collections.abc import Callable
 from datetime import date, datetime
 
+from account import Account
+from category import Category
 from clock import TodayProvider, UtcNowProvider, local_today, utc_now
 from date_policy import (
     FutureTransactionDateError,
@@ -16,7 +19,22 @@ from transaction_repository import (
     TransactionDateSummary,
     TransactionRepository,
 )
-from validators import validate_transaction_date, validate_utc_datetime
+from validators import (
+    validate_optional_uuid,
+    validate_transaction_date,
+    validate_transaction_type,
+    validate_utc_datetime,
+)
+
+AccountLookup = Callable[[str], Account | None]
+CategoryLookup = Callable[[str], Category | None]
+
+
+class _ReferenceNotSupplied:
+    """Private marker distinguishing omission from unsupported clearing."""
+
+
+_REFERENCE_NOT_SUPPLIED = _ReferenceNotSupplied()
 
 
 class TransactionServiceError(Exception):
@@ -54,6 +72,89 @@ class InvalidUtcClockError(TransactionServiceError, ValueError):
     """Raised when the injected UTC clock violates its contract."""
 
 
+class ManagedReferenceError(TransactionServiceError, ValueError):
+    """Base class for managed Account and Category reference errors."""
+
+
+class ManagedLookupUnavailableError(ManagedReferenceError):
+    """Raised when a managed reference has no configured lookup."""
+
+    def __init__(self, record_type: str) -> None:
+        self.record_type = record_type
+        super().__init__(f"Managed {record_type.lower()} lookup is unavailable.")
+
+
+class ManagedAccountNotFoundError(ManagedReferenceError, LookupError):
+    """Raised when an account UUID does not resolve."""
+
+    def __init__(self, account_id: str) -> None:
+        self.account_id = account_id
+        super().__init__(f"Account reference {account_id} was not found.")
+
+
+class ManagedAccountInactiveError(ManagedReferenceError):
+    """Raised when a newly selected account is inactive."""
+
+    def __init__(self, account_id: str) -> None:
+        self.account_id = account_id
+        super().__init__(f"Account reference {account_id} is inactive.")
+
+
+class ManagedCategoryNotFoundError(ManagedReferenceError, LookupError):
+    """Raised when a category UUID does not resolve."""
+
+    def __init__(self, category_id: str) -> None:
+        self.category_id = category_id
+        super().__init__(f"Category reference {category_id} was not found.")
+
+
+class ManagedCategoryInactiveError(ManagedReferenceError):
+    """Raised when a newly selected category is inactive."""
+
+    def __init__(self, category_id: str) -> None:
+        self.category_id = category_id
+        super().__init__(f"Category reference {category_id} is inactive.")
+
+
+class ManagedCategoryTypeMismatchError(ManagedReferenceError):
+    """Raised when a managed category conflicts with a transaction type."""
+
+    def __init__(
+        self,
+        category_id: str,
+        category_type: str,
+        transaction_type: str,
+    ) -> None:
+        self.category_id = category_id
+        self.category_type = category_type
+        self.transaction_type = transaction_type
+        super().__init__(
+            f"Category reference {category_id} is for {category_type} "
+            f"transactions, not {transaction_type}."
+        )
+
+
+class ManagedSnapshotUpdateError(ManagedReferenceError):
+    """Raised when text attempts to override a preserved managed snapshot."""
+
+    def __init__(self, record_type: str) -> None:
+        self.record_type = record_type
+        super().__init__(
+            f"{record_type} snapshot cannot be changed while preserving its "
+            f"managed reference; supply a new {record_type.lower()} reference."
+        )
+
+
+class ManagedReferenceClearingError(ManagedReferenceError):
+    """Raised when callers explicitly request unsupported reference clearing."""
+
+    def __init__(self, record_type: str) -> None:
+        self.record_type = record_type
+        super().__init__(
+            f"Clearing a managed {record_type.lower()} reference is not supported."
+        )
+
+
 class TransactionService:
     """Coordinate transaction validation, clocks, and persistence."""
 
@@ -63,12 +164,16 @@ class TransactionService:
         *,
         today_provider: TodayProvider = local_today,
         utc_now_provider: UtcNowProvider = utc_now,
+        account_lookup: AccountLookup | None = None,
+        category_lookup: CategoryLookup | None = None,
     ) -> None:
         self._repository = (
             JsonTransactionRepository() if repository is None else repository
         )
         self._today_provider = today_provider
         self._utc_now_provider = utc_now_provider
+        self._account_lookup = account_lookup
+        self._category_lookup = category_lookup
 
     def _accepted_date(self, value: date) -> date:
         accepted_date = validate_date_query(
@@ -104,6 +209,50 @@ class TransactionService:
         except ValueError as error:
             raise InvalidUtcClockError(str(error)) from error
 
+    def _account_by_id(self, account_id: str) -> Account:
+        if self._account_lookup is None:
+            raise ManagedLookupUnavailableError("Account")
+        account = self._account_lookup(account_id)
+        if account is None:
+            raise ManagedAccountNotFoundError(account_id)
+        return account
+
+    def _category_by_id(self, category_id: str) -> Category:
+        if self._category_lookup is None:
+            raise ManagedLookupUnavailableError("Category")
+        category = self._category_lookup(category_id)
+        if category is None:
+            raise ManagedCategoryNotFoundError(category_id)
+        return category
+
+    def _active_account(self, account_id: str) -> Account:
+        account_id = validate_optional_uuid(account_id, "Account ID")
+        assert account_id is not None
+        account = self._account_by_id(account_id)
+        if not account.is_active:
+            raise ManagedAccountInactiveError(account_id)
+        return account
+
+    def _compatible_category(
+        self,
+        category_id: str,
+        transaction_type: str,
+        *,
+        require_active: bool,
+    ) -> Category:
+        category_id = validate_optional_uuid(category_id, "Category ID")
+        assert category_id is not None
+        category = self._category_by_id(category_id)
+        if require_active and not category.is_active:
+            raise ManagedCategoryInactiveError(category_id)
+        if category.transaction_type != transaction_type:
+            raise ManagedCategoryTypeMismatchError(
+                category_id,
+                category.transaction_type,
+                transaction_type,
+            )
+        return category
+
     def add_transaction(
         self,
         *,
@@ -113,11 +262,26 @@ class TransactionService:
         category: str,
         account: str,
         description: str,
+        account_id: str | None = None,
+        category_id: str | None = None,
     ) -> Transaction:
         accepted_date = self._accepted_date(transaction_date)
+        accepted_type = validate_transaction_type(transaction_type)
+        if account_id is not None:
+            managed_account = self._active_account(account_id)
+            account_id = managed_account.id
+            account = managed_account.name
+        if category_id is not None:
+            managed_category = self._compatible_category(
+                category_id,
+                accepted_type,
+                require_active=True,
+            )
+            category_id = managed_category.id
+            category = managed_category.name
         timestamp = self._utc_now()
         transaction = create_transaction(
-            transaction_type=transaction_type,
+            transaction_type=accepted_type,
             amount=amount,
             category=category,
             account=account,
@@ -125,6 +289,8 @@ class TransactionService:
             transaction_date=accepted_date,
             created_at=timestamp,
             updated_at=timestamp,
+            account_id=account_id,
+            category_id=category_id,
         )
         return self._repository.create(transaction)
 
@@ -155,6 +321,12 @@ class TransactionService:
         account: str | None = None,
         description: str | None = None,
         transaction_date: date | None = None,
+        account_id: str | None | _ReferenceNotSupplied = (
+            _REFERENCE_NOT_SUPPLIED
+        ),
+        category_id: str | None | _ReferenceNotSupplied = (
+            _REFERENCE_NOT_SUPPLIED
+        ),
     ) -> Transaction:
         """Persist requested changes and always advance ``updated_at``."""
         accepted_active_date = self._accepted_date(active_date)
@@ -167,17 +339,59 @@ class TransactionService:
             if transaction_date is None
             else self._accepted_date(transaction_date)
         )
+        accepted_type = (
+            existing.type
+            if transaction_type is None
+            else validate_transaction_type(transaction_type)
+        )
+
+        accepted_account_id = existing.account_id
+        accepted_account = existing.account
+        if account_id is not _REFERENCE_NOT_SUPPLIED:
+            if account_id is None:
+                raise ManagedReferenceClearingError("Account")
+            managed_account = self._active_account(account_id)
+            accepted_account_id = managed_account.id
+            accepted_account = managed_account.name
+        elif existing.account_id is not None:
+            if account is not None:
+                raise ManagedSnapshotUpdateError("Account")
+        elif account is not None:
+            accepted_account = account
+
+        accepted_category_id = existing.category_id
+        accepted_category = existing.category
+        if category_id is not _REFERENCE_NOT_SUPPLIED:
+            if category_id is None:
+                raise ManagedReferenceClearingError("Category")
+            managed_category = self._compatible_category(
+                category_id,
+                accepted_type,
+                require_active=True,
+            )
+            accepted_category_id = managed_category.id
+            accepted_category = managed_category.name
+        elif existing.category_id is not None:
+            if category is not None:
+                raise ManagedSnapshotUpdateError("Category")
+            if accepted_type != existing.type:
+                self._compatible_category(
+                    existing.category_id,
+                    accepted_type,
+                    require_active=False,
+                )
+        elif category is not None:
+            accepted_category = category
+
         timestamp = self._utc_now()
 
         # An update always advances updated_at, including a metadata-only update
         # where all optional financial/content fields are omitted.
         updated = create_transaction(
-            transaction_type=(
-                existing.type if transaction_type is None else transaction_type
-            ),
+            transaction_type=accepted_type,
             amount=existing.amount if amount is None else amount,
-            category=existing.category if category is None else category,
-            account=existing.account if account is None else account,
+            category=accepted_category,
+            account=accepted_account,
             description=(
                 existing.description if description is None else description
             ),
@@ -186,8 +400,8 @@ class TransactionService:
             updated_at=timestamp,
             transaction_id=existing.id,
             display_id=existing.display_id,
-            account_id=existing.account_id,
-            category_id=existing.category_id,
+            account_id=accepted_account_id,
+            category_id=accepted_category_id,
         )
         try:
             return self._repository.replace(updated)

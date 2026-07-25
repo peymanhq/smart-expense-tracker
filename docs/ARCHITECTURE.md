@@ -73,6 +73,10 @@ main.py
 JSON access. `TransactionRepository` isolates the application layer from the
 current JSON implementation.
 
+`main.py` also composes `TransactionService` with the public Account and
+Category UUID query functions. The service receives only lookup callables and
+does not know Account/Category file paths or storage formats.
+
 Account workflows use a focused application-service module so their business
 rules remain independent of CLI input and output.
 
@@ -98,6 +102,9 @@ collections, propagate storage errors, and do not modify persisted data.
    `TransactionService`.
 2. The service applies the shared future-date policy, obtains one injected UTC
    timestamp, and uses `transaction_factory.py` for validation and construction.
+   Optional managed UUIDs are resolved independently: a supplied reference must
+   identify an active record, and its current name becomes the authoritative
+   stored snapshot. Omitted references retain legacy free-text behavior.
 3. `JsonTransactionRepository` acquires the transaction lock and loads the
    latest document.
 4. Under that same lock, it allocates the next global display ID, appends the
@@ -118,6 +125,14 @@ display-ID lookup so not-found and outside-active-date errors remain distinct.
 Repository mutations then operate by stable internal UUID under a complete
 read-modify-write lock. Updates preserve UUID, display ID, and `created_at`,
 advance `updated_at`, and may explicitly change `transaction_date`.
+
+Unrelated updates preserve managed UUIDs and their stored snapshots without
+revalidating active status, allowing inactive historical references to remain
+usable. Selecting a new managed record requires an active lookup. Direct text
+changes to a preserved managed snapshot are rejected; callers must supply a new
+UUID. A transaction-type change must remain compatible with an existing or new
+managed category. Legacy transactions with no category UUID retain their
+free-text category during type changes.
 
 `search.py` applies exact, inclusive closed-range, and one-sided-range financial
 date selection with AND semantics. `report.py` reuses that pure selection logic
@@ -245,10 +260,11 @@ State advancement precedes persistence of a newly allocated record, so a
 failed second write can create a harmless ID gap but cannot cause reuse.
 Complete mutations run under a re-entrant cross-process category lock.
 
-The transaction data contract now has space for Account and Category UUIDs, but
-transaction creation still accepts snapshot names without managed references.
-Account/Category existence, activation status, category/type compatibility,
-legacy reconciliation, and CLI selection remain future integration work.
+`TransactionService` now validates optional managed Account and Category UUIDs
+through injected public query boundaries. Runtime CLI handlers still send only
+snapshot names, so current terminal add/update flows remain in legacy mode.
+Interactive Account/Category selection, display resolution, and legacy
+reconciliation remain future integration work.
 
 ---
 

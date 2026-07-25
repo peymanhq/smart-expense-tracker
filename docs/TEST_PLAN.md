@@ -26,7 +26,7 @@ files. Automated and manual verification therefore protect the real
 The current v1.1.0 development suite completes successfully:
 
 ```text
-292 passed
+323 passed
 ```
 
 The pytest suite covers:
@@ -56,6 +56,12 @@ The pytest suite covers:
 - Exact, whitespace-tolerant, case-insensitive display-ID lookup
 - Successful update and not-found behavior
 - Preservation of internal UUID and display ID during updates
+- Injected managed Account/Category lookup boundaries and unavailable-lookup
+  errors
+- Independent managed references, active-only new selection, authoritative
+  snapshots, and category/type compatibility
+- Preservation of inactive historical references and rejection of direct
+  managed snapshot edits
 - Successful and unsuccessful deletion
 - Exact-date, inclusive closed-range, and one-sided API search
 - AND-composed filters and deterministic date/display-ID ordering

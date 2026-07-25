@@ -22,7 +22,7 @@ search, and daily/range reports. Transaction mutations are locked, creation
 allocates display IDs atomically, and schema version 3 remains compatible with
 legacy transaction files.
 
-The current automated suite contains 292 passing tests. Transaction persistence
+The current automated suite contains 323 passing tests. Transaction persistence
 tests use temporary files and do not modify runtime JSON data.
 
 ## Current Architecture
@@ -45,6 +45,8 @@ access transaction JSON directly.
 - add, date-scoped update/delete, and date movement workflows;
 - the distinction between global not-found and active-date mismatch;
 - creation/update timestamp semantics.
+- optional managed Account/Category resolution, active-selection rules, and
+  managed category/type compatibility.
 
 Calling update with no editable values is a metadata-only update: financial
 content remains unchanged and `updated_at` advances.
@@ -122,9 +124,15 @@ future work.
 ### Managed References
 
 Transactions can store optional managed-record UUIDs alongside required
-snapshot names. Account/Category lookup, active-state and category/type
-enforcement, CLI selection, and migration of historical snapshot-only values
-remain future work.
+snapshot names. `TransactionService` receives public UUID lookup callables from
+`main.py`. Newly supplied references must exist and be active; managed category
+types must match. Preserved inactive historical references are not revalidated
+during unrelated updates, and managed snapshots cannot be edited without a new
+reference.
+
+The CLI still submits free-text names without UUIDs. Interactive selection,
+display resolution, and migration of historical snapshot-only values remain
+future work.
 
 ### Flat JSON Limits
 

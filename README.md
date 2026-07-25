@@ -160,7 +160,7 @@ python -m pytest -q
 ```
 
 Tests use pytest temporary paths and do not write to application data files.
-The current suite contains 292 passing tests.
+The current suite contains 323 passing tests.
 
 ## JSON persistence
 
@@ -220,6 +220,13 @@ latest document, allocates and advances the global display-ID counter, validates
 the candidate document, and writes it atomically while holding one lock.
 Account and category storage remains separate from transaction persistence.
 
+`TransactionService` can accept optional Account and Category UUIDs through
+injected public lookups. New managed selections must exist and be active;
+managed categories must match the transaction type, and managed names override
+caller-provided snapshot text. Omitted references preserve legacy free-text
+behavior. Existing inactive references remain valid for unrelated historical
+updates.
+
 Accounts are stored separately in `data/accounts.json` as one document
 containing display-ID metadata and the account list. This makes an account
 change and its next-ID advancement one atomic file replacement. Account
@@ -244,9 +251,8 @@ ID. If state is missing, it is recovered from the highest stored category ID.
 - No database, GUI, charts, or multi-currency support
 - No Excel or PDF export
 - No authentication or synchronization
-- Accounts and categories are not yet linked to transactions
-- Transactions can store optional `category_id` and `account_id` UUIDs, but
-  managed validation, CLI selection, and legacy reconciliation are not yet
+- Transactions support programmatic managed Account and Category references,
+  but CLI selection, display resolution, and legacy reconciliation are not yet
   implemented
 - Transfers and Excel import/export are not implemented
 - Transaction amounts still use `float`; exact `Decimal` money is deferred

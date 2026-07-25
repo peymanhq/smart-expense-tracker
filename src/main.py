@@ -1,21 +1,25 @@
 """Entry point for the Smart Expense Tracker application."""
 
 from datetime import date
+from functools import partial
 
 from account_service import (
     activate_account,
     add_account,
     deactivate_account,
+    get_account_by_id,
     rename_account,
 )
-from account_storage import load_accounts
+from account_storage import ACCOUNTS_FILE, load_accounts
 from category_service import (
     activate_category,
     add_category,
     deactivate_category,
+    get_category_by_id,
     list_categories,
     rename_category,
 )
+from category_storage import CATEGORIES_FILE, CATEGORY_STATE_FILE
 from clock import TodayProvider, local_today
 from date_policy import ValidatedDateQuery
 from formatter import format_transactions
@@ -41,6 +45,15 @@ TRANSACTION_REPOSITORY = JsonTransactionRepository()
 TRANSACTION_SERVICE = TransactionService(
     TRANSACTION_REPOSITORY,
     today_provider=TRANSACTION_TODAY_PROVIDER,
+    account_lookup=partial(
+        get_account_by_id,
+        accounts_file=ACCOUNTS_FILE,
+    ),
+    category_lookup=partial(
+        get_category_by_id,
+        categories_file=CATEGORIES_FILE,
+        state_file=CATEGORY_STATE_FILE,
+    ),
 )
 
 """==============Handles Fanection================"""

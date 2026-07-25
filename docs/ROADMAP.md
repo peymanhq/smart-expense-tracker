@@ -77,10 +77,11 @@ In development.
 - Continuous Integration (CI)
 
 Optional `category_id` and `account_id` transaction fields are established.
-Category and Account selection during transaction entry, managed-reference
-validation, migration of existing free-text values, transfers, Decimal money,
-Excel/PDF export, charts/dashboard, SQLite, multiple currencies, multiple
-accounts, and a GUI remain future work. Version 1.1.0 is still in development.
+Programmatic managed-reference validation is established in
+`TransactionService`. Category and Account selection during transaction entry,
+migration of existing free-text values, transfers, Decimal money, Excel/PDF
+export, charts/dashboard, SQLite, multiple currencies, multiple accounts, and a
+GUI remain future work. Version 1.1.0 is still in development.
 
 ---
 

@@ -424,17 +424,7 @@ def test_update_preserves_identity_and_creation_time_and_advances_update(
     ).get_by_display_id(original.display_id) == updated
 
 
-@pytest.mark.parametrize(
-    "updates",
-    [
-        {},
-        {"category": "Dining", "account": "Wallet"},
-    ],
-)
-def test_update_preserves_reference_ids(
-    repository,
-    updates: dict[str, str],
-) -> None:
+def test_unrelated_update_preserves_reference_ids(repository) -> None:
     original = repository.create(
         Transaction(
             id="transaction-with-references",
@@ -460,13 +450,14 @@ def test_update_preserves_reference_ids(
     updated = service.update_transaction(
         original.display_id,
         active_date=TODAY,
-        **updates,
+        amount=12.0,
     )
 
-    assert updated.category == updates.get("category", original.category)
-    assert updated.account == updates.get("account", original.account)
+    assert updated.category == original.category
+    assert updated.account == original.account
     assert updated.account_id == ACCOUNT_ID
     assert updated.category_id == CATEGORY_ID
+    assert updated.amount == 12.0
     assert updated.id == original.id
     assert updated.display_id == original.display_id
     assert updated.created_at == NOW
