@@ -10,6 +10,11 @@ def generate_account_id() -> str:
     return str(uuid.uuid4())
 
 
+def generate_category_id() -> str:
+    """Generate an internal UUID for a category."""
+    return str(uuid.uuid4())
+
+
 def generate_display_id(number: int) -> str:
     """Format a positive display ID sequence number."""
     if number < 1:
@@ -68,5 +73,36 @@ def calculate_next_account_display_id(display_ids: list[str]) -> int:
         number
         for display_id in display_ids
         if (number := parse_account_display_id(display_id)) is not None
+    ]
+    return max(numbers, default=0) + 1
+
+
+def generate_category_display_id(number: int) -> str:
+    """Format a positive category display-ID sequence number."""
+    if number < 1:
+        raise ValueError("Display ID number must be positive.")
+    return f"C-{number:04d}"
+
+
+def parse_category_display_id(display_id: str) -> int | None:
+    """Return the numeric portion of a valid category display ID."""
+    normalized = display_id.strip().upper()
+    if not normalized.startswith("C-"):
+        return None
+
+    number = normalized.removeprefix("C-")
+    if not number.isdigit():
+        return None
+
+    parsed = int(number)
+    return parsed if parsed > 0 else None
+
+
+def calculate_next_category_display_id(display_ids: list[str]) -> int:
+    """Calculate safe category display-ID state from persisted categories."""
+    numbers = [
+        number
+        for display_id in display_ids
+        if (number := parse_category_display_id(display_id)) is not None
     ]
     return max(numbers, default=0) + 1

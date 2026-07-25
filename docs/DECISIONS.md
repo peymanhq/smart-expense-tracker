@@ -427,3 +427,45 @@ from the passive `Account` dataclass and the CLI.
 - Malformed account records fail with controlled storage errors.
 - Account workflows can later be reused by interfaces other than the CLI.
 - Accounts and transactions remain intentionally unconnected in this phase.
+
+---
+
+# ADR-016
+
+## Title
+
+Store standalone categories as a validated list with separate monotonic state.
+
+## Status
+
+Accepted
+
+## Context
+
+Version 1.1.0 needs Category Management without adding `category_id` to
+transactions or changing the published transaction JSON schema. There is no
+existing production Category format requiring migration.
+
+## Decision
+
+Use a passive `Category` dataclass and keep business rules in
+`category_service.py`. Store records as a JSON list in `data/categories.json`
+and the next display-ID number in `data/categories_state.json`. Protect the
+complete read-modify-write workflow with a category file lock and use the
+shared atomic JSON writer for each file.
+
+Active names are unique by NFC-normalized, case-insensitive name plus
+transaction type. Inactive names are reusable. Validate the exact Category
+schema and counter compatibility at the storage boundary. When allocating an
+ID, persist advanced state before the category list so a failed list write can
+create a gap but cannot allow ID reuse. Recover missing state from the highest
+stored `C-####` ID.
+
+## Consequences
+
+- Categories remain standalone and transactions retain their v1.0 schema.
+- The same active name can exist once for income and once for expense.
+- Deactivated records and identifiers remain available and are never deleted.
+- Concurrent mutations do not silently lose records or duplicate identifiers.
+- Corrupt category records or state fail with controlled `StorageError`.
+- There is no unnecessary legacy Category format.

@@ -52,6 +52,11 @@ In development.
 - Persistent account UUID and display-ID state
 - Atomic single-document account JSON persistence with legacy migration
 - Validated account schema and concurrent-writer locking
+- Standalone Category Management
+- Income and expense category types
+- Add, view, rename, activate, and deactivate category workflows
+- Persistent category UUIDs and monotonic `C-####` display-ID state
+- Strict category schema validation and locked category mutations
 
 ## Planned Work
 
@@ -64,8 +69,10 @@ In development.
 - Better project packaging
 - Continuous Integration (CI)
 
-Account-to-transaction integration, categories, transfers, and Excel
-import/export remain outside the current Account Management phase.
+Category selection during transaction entry, a `category_id` transaction
+field, migration of existing free-text category values, account/category
+integration with transactions, transfers, default transaction dates, and Excel
+import/export remain future work. Version 1.1.0 is still in development.
 
 ---
 

@@ -7,6 +7,13 @@ from account_service import (
     rename_account,
 )
 from account_storage import load_accounts
+from category_service import (
+    activate_category,
+    add_category,
+    deactivate_category,
+    list_categories,
+    rename_category,
+)
 from formatter import format_transactions
 from report import calculate_summary, filter_transactions
 from search import find_transaction_by_display_id, search_transactions
@@ -270,6 +277,91 @@ def account_management_menu() -> None:
         pause_account_management()
 
 
+def handle_add_category() -> None:
+    print("\nTransaction type:")
+    print("1. Income")
+    print("2. Expense")
+    transaction_types = {"1": "income", "2": "expense"}
+    transaction_type = transaction_types.get(input("Choose transaction type: "))
+    if transaction_type is None:
+        print("Invalid transaction type choice.")
+        return
+
+    result = add_category(input("Category name: "), transaction_type)
+    print(result.message)
+
+
+def handle_view_categories() -> None:
+    categories = list_categories()
+    if not categories:
+        print("No categories found.")
+        return
+
+    for category in categories:
+        status = "Active" if category.is_active else "Inactive"
+        print(
+            f"{category.display_id} | {category.name} | "
+            f"{category.transaction_type.title()} | {status}"
+        )
+
+
+def handle_rename_category() -> None:
+    display_id = input("Category display ID: ")
+    new_name = input("New category name: ")
+    result = rename_category(display_id, new_name)
+    print(result.message)
+
+
+def handle_activate_category() -> None:
+    display_id = input("Category display ID: ")
+    result = activate_category(display_id)
+    print(result.message)
+
+
+def handle_deactivate_category() -> None:
+    display_id = input("Category display ID: ")
+    result = deactivate_category(display_id)
+    print(result.message)
+
+
+def pause_category_management() -> None:
+    input("\nPress Enter to return to Category Management...")
+
+
+def category_management_menu() -> None:
+    actions = {
+        "1": handle_add_category,
+        "2": handle_view_categories,
+        "3": handle_rename_category,
+        "4": handle_activate_category,
+        "5": handle_deactivate_category,
+    }
+
+    while True:
+        print("\n=== Category Management ===")
+        print("1. Add category")
+        print("2. View categories")
+        print("3. Rename category")
+        print("4. Activate category")
+        print("5. Deactivate category")
+        print("6. Back")
+
+        choice = input("\n===>Choose an option: ")
+        if choice == "6":
+            return
+
+        action = actions.get(choice)
+        if action is None:
+            print("Invalid choice. Please try again.")
+            continue
+
+        try:
+            action()
+        except StorageError as error:
+            print(f"Storage error: {error}")
+        pause_category_management()
+
+
 """=================Menu dic========================"""
 MENU_ACTIONS = {
     "1": lambda: handle_add_transaction("income"),
@@ -281,6 +373,7 @@ MENU_ACTIONS = {
     "7": handle_update_transaction,
     "8": handle_search,
     "9": account_management_menu,
+    "10": category_management_menu,
 }
 
 """=================Main fanection=================="""
@@ -303,6 +396,7 @@ def main() -> None:
         print("7. Update Transaction")
         print("8. search")
         print("9. Account Management")
+        print("10. Category Management")
         print("0. Exit")
 
         choice = input("\n===>Choose an option: ")
