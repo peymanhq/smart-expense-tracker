@@ -557,8 +557,8 @@ writer.
 
 The CLI does not allocate IDs, generate timestamps, or access JSON. A future
 SQLite implementation can replace the repository without moving storage rules
-into the CLI. Account and category UUID integration remains separate future
-work.
+into the CLI. Enforcing managed Account and Category references remains
+separate future work.
 
 ---
 
@@ -636,3 +636,45 @@ For legacy records, `created_at=None` remains `None`.
 CLI submissions containing no field changes are recorded consistently as
 metadata-only updates. Callers that do not intend an update should not invoke
 the method.
+
+---
+
+# ADR-023
+
+## Title
+
+Store optional Account and Category UUID references with name snapshots.
+
+## Status
+
+Accepted
+
+## Context
+
+Transactions need durable managed-record references without breaking existing
+free-text records, historical display, search, filtering, reports, or legacy
+JSON compatibility.
+
+## Decision
+
+Transaction schema version 3 adds optional `account_id` and `category_id`
+fields. Non-null values must be canonical UUID text. The existing required
+`account` and `category` strings remain stored snapshots and fallbacks. Legacy
+transactions without references load with `None`, and successful later
+mutations write those missing references explicitly as JSON `null`.
+
+Internal UUIDs are durable references. Account and Category display IDs remain
+interaction identifiers and are not persisted as transaction foreign keys.
+Inactive referenced records will remain resolvable for historical transactions
+when managed resolution is introduced.
+
+## Consequences
+
+- Schema versions 1, 2, and 3 remain readable without read-time migration.
+- Snapshot-only transaction creation remains valid during the integration
+  transition.
+- Updating unrelated transaction fields preserves existing reference UUIDs.
+- Managed existence, active-state, and category/type enforcement are not yet
+  implemented.
+- CLI Account and Category selection and legacy reconciliation remain future
+  work.

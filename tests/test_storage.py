@@ -11,6 +11,10 @@ from storage import StorageError
 from transaction import Transaction
 
 
+ACCOUNT_ID = "123e4567-e89b-12d3-a456-426614174000"
+CATEGORY_ID = "123e4567-e89b-12d3-a456-426614174001"
+
+
 @pytest.fixture(autouse=True)
 def use_temporary_data_file(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(storage, "DATA_FILE", tmp_path / "data" / "transactions.json")
@@ -65,8 +69,46 @@ def test_save_and_load_transactions_with_metadata() -> None:
     assert storage.load_transactions() == [transaction]
     document = json.loads(storage.DATA_FILE.read_text(encoding="utf-8"))
     assert document["metadata"]["next_display_id"] == 2
-    assert document["schema_version"] == 2
+    assert document["schema_version"] == 3
     assert document["transactions"][0]["id"] == "uuid-1"
+    assert document["transactions"][0]["account_id"] is None
+    assert document["transactions"][0]["category_id"] is None
+
+
+def test_schema_three_reference_ids_round_trip() -> None:
+    transaction = replace(
+        make_transaction(),
+        account_id=ACCOUNT_ID,
+        category_id=CATEGORY_ID,
+    )
+
+    storage.save_transaction(transaction)
+
+    document = json.loads(storage.DATA_FILE.read_text(encoding="utf-8"))
+    stored = document["transactions"][0]
+    assert document["schema_version"] == 3
+    assert stored["category"] == "Food"
+    assert stored["category_id"] == CATEGORY_ID
+    assert stored["account"] == "Cash"
+    assert stored["account_id"] == ACCOUNT_ID
+    assert storage.load_transactions() == [transaction]
+
+
+def test_schema_three_explicit_null_references_load_as_none() -> None:
+    write_raw_document(
+        {
+            "schema_version": 3,
+            "metadata": {"next_display_id": 2},
+            "transactions": [
+                make_record(account_id=None, category_id=None),
+            ],
+        }
+    )
+
+    loaded = storage.load_transactions()[0]
+
+    assert loaded.account_id is None
+    assert loaded.category_id is None
 
 
 def test_date_and_utc_timestamp_serialization_round_trip() -> None:
@@ -96,6 +138,8 @@ def test_legacy_date_and_missing_timestamps_load_without_invention() -> None:
     assert loaded.updated_at is None
     assert loaded.id == "uuid-1"
     assert loaded.display_id == "T-0001"
+    assert loaded.account_id is None
+    assert loaded.category_id is None
 
 
 def test_current_transaction_date_field_loads() -> None:
@@ -112,6 +156,8 @@ def test_current_transaction_date_field_loads() -> None:
     assert loaded.transaction_date == date(2026, 7, 24)
     assert loaded.id == "preserved-uuid"
     assert loaded.display_id == "T-0007"
+    assert loaded.account_id is None
+    assert loaded.category_id is None
     assert storage.get_next_display_id() == "T-0008"
 
 
@@ -146,20 +192,42 @@ def test_missing_schema_version_is_legacy_version_one() -> None:
         }
     )
 
-    assert storage.load_transactions()[0].id == "uuid-1"
+    loaded = storage.load_transactions()[0]
+    assert loaded.id == "uuid-1"
+    assert loaded.account_id is None
+    assert loaded.category_id is None
+    assert storage.DATA_FILE.read_text(encoding="utf-8") == original
+
+
+@pytest.mark.parametrize("schema_version", [1, 2, 3])
+def test_supported_schema_versions_load_missing_references_without_rewriting(
+    schema_version: int,
+) -> None:
+    original = write_raw_document(
+        {
+            "schema_version": schema_version,
+            "metadata": {"next_display_id": 2},
+            "transactions": [make_record()],
+        }
+    )
+
+    loaded = storage.load_transactions()[0]
+
+    assert loaded.account_id is None
+    assert loaded.category_id is None
     assert storage.DATA_FILE.read_text(encoding="utf-8") == original
 
 
 def test_unsupported_future_schema_version_raises_without_writing() -> None:
     original = write_raw_document(
         {
-            "schema_version": 3,
+            "schema_version": 4,
             "metadata": {"next_display_id": 2},
             "transactions": [make_record()],
         }
     )
 
-    with pytest.raises(StorageError, match="Unsupported transaction schema version 3"):
+    with pytest.raises(StorageError, match="Unsupported transaction schema version 4"):
         storage.load_transactions()
 
     assert storage.DATA_FILE.read_text(encoding="utf-8") == original
@@ -175,6 +243,38 @@ def test_read_only_load_does_not_modify_current_document() -> None:
     )
 
     assert len(storage.load_transactions()) == 1
+
+    assert storage.DATA_FILE.read_text(encoding="utf-8") == original
+
+
+@pytest.mark.parametrize("field", ["account_id", "category_id"])
+@pytest.mark.parametrize(
+    "value",
+    [
+        True,
+        42,
+        [],
+        {},
+        "",
+        "not-a-uuid",
+        f" {ACCOUNT_ID}",
+        f"{{{ACCOUNT_ID}}}",
+    ],
+)
+def test_invalid_persisted_reference_ids_are_rejected(
+    field: str,
+    value: object,
+) -> None:
+    original = write_raw_document(
+        {
+            "schema_version": 3,
+            "metadata": {"next_display_id": 2},
+            "transactions": [make_record(**{field: value})],
+        }
+    )
+
+    with pytest.raises(StorageError, match=f"{field}.*canonical UUID"):
+        storage.load_transactions()
 
     assert storage.DATA_FILE.read_text(encoding="utf-8") == original
 
@@ -345,12 +445,58 @@ def test_legacy_list_loads_and_migrates_on_next_write() -> None:
     storage.save_transaction(make_transaction("T-0008", "new-uuid"))
     migrated = json.loads(storage.DATA_FILE.read_text(encoding="utf-8"))
     assert migrated["metadata"]["next_display_id"] == 9
-    assert migrated["schema_version"] == 2
+    assert migrated["schema_version"] == 3
     assert len(migrated["transactions"]) == 2
     assert "date" not in migrated["transactions"][0]
     assert migrated["transactions"][0]["transaction_date"] == "2026-07-24"
     assert migrated["transactions"][0]["created_at"] is None
     assert migrated["transactions"][0]["updated_at"] is None
+    assert migrated["transactions"][0]["account_id"] is None
+    assert migrated["transactions"][0]["category_id"] is None
+
+
+def test_schema_two_mutation_upgrades_with_explicit_null_references() -> None:
+    write_raw_document(
+        {
+            "schema_version": 2,
+            "metadata": {"next_display_id": 2},
+            "transactions": [make_record()],
+        }
+    )
+
+    storage.save_transaction(make_transaction("T-0002", "uuid-2"))
+
+    migrated = json.loads(storage.DATA_FILE.read_text(encoding="utf-8"))
+    assert migrated["schema_version"] == 3
+    assert migrated["metadata"]["next_display_id"] == 3
+    assert len(migrated["transactions"]) == 2
+    assert all(
+        transaction["account_id"] is None
+        and transaction["category_id"] is None
+        for transaction in migrated["transactions"]
+    )
+
+
+def test_failed_mutation_does_not_partially_migrate_schema_two(
+    monkeypatch,
+) -> None:
+    original = write_raw_document(
+        {
+            "schema_version": 2,
+            "metadata": {"next_display_id": 2},
+            "transactions": [make_record()],
+        }
+    )
+
+    def fail_replace(source, destination) -> None:
+        raise OSError("simulated replace failure")
+
+    monkeypatch.setattr(os, "replace", fail_replace)
+
+    with pytest.raises(StorageError, match="simulated replace failure"):
+        storage.save_transaction(make_transaction("T-0002", "uuid-2"))
+
+    assert storage.DATA_FILE.read_text(encoding="utf-8") == original
 
 
 def test_failed_atomic_replace_preserves_previous_file(monkeypatch) -> None:

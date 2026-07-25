@@ -26,7 +26,7 @@ files. Automated and manual verification therefore protect the real
 The current v1.1.0 development suite completes successfully:
 
 ```text
-248 passed
+292 passed
 ```
 
 The pytest suite covers:
@@ -40,7 +40,10 @@ The pytest suite covers:
 - Selected-date workspace defaults, reset behavior, cancellation, and empty dates
 - Populated-date browsing, counts, ordering, and singular/plural output
 - Validation failures for amount, transaction type, category, account, and date
-- Saving and loading transaction schema version 2
+- Saving and loading transaction schema version 3 with optional canonical
+  Account and Category UUID references
+- Schema version 1 and 2 reference defaults, read-only compatibility, and
+  mutation-time migration to explicit schema version 3 null references
 - Missing schema version, legacy top-level lists, and legacy `date` compatibility
 - Matching/conflicting legacy and current date fields
 - Preservation of missing legacy timestamps during load and update

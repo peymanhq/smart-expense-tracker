@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta, timezone
+from uuid import UUID
 
 
 def validate_amount(amount: str | float | int) -> float:
@@ -81,6 +82,28 @@ def parse_utc_datetime(
         )
 
     return parsed_value
+
+
+def validate_optional_uuid(
+    value: object,
+    field_name: str,
+) -> str | None:
+    """Accept ``None`` or canonical lowercase hyphenated UUID text."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a canonical UUID string.")
+
+    try:
+        parsed_value = UUID(value)
+    except (ValueError, AttributeError) as error:
+        raise ValueError(
+            f"{field_name} must be a canonical UUID string."
+        ) from error
+
+    if str(parsed_value) != value:
+        raise ValueError(f"{field_name} must be a canonical UUID string.")
+    return value
 
 
 def validate_date(date_input: date | str) -> date:

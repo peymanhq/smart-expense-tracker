@@ -16,11 +16,15 @@ from id_generator import (
 from json_storage import StorageError, write_json_atomic
 from search import find_transaction_by_display_id
 from transaction import Transaction
-from validators import parse_utc_datetime, validate_transaction_date
+from validators import (
+    parse_utc_datetime,
+    validate_optional_uuid,
+    validate_transaction_date,
+)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_FILE = BASE_DIR / "data" / "transactions.json"
-TRANSACTION_SCHEMA_VERSION = 2
+TRANSACTION_SCHEMA_VERSION = 3
 _LOCK_STATE = local()
 
 
@@ -231,6 +235,14 @@ def _deserialize_transactions(document: dict[str, Any]) -> list[Transaction]:
                 record.get("updated_at"),
                 "updated_at",
             )
+            record["account_id"] = validate_optional_uuid(
+                record.get("account_id"),
+                "account_id",
+            )
+            record["category_id"] = validate_optional_uuid(
+                record.get("category_id"),
+                "category_id",
+            )
             transaction = Transaction(**record)
             text_fields = {
                 "id": transaction.id,
@@ -284,7 +296,9 @@ def _serialize_transaction(transaction: Transaction) -> dict[str, Any]:
         "type": transaction.type,
         "amount": transaction.amount,
         "category": transaction.category,
+        "category_id": transaction.category_id,
         "account": transaction.account,
+        "account_id": transaction.account_id,
         "description": transaction.description,
         "transaction_date": transaction.transaction_date.isoformat(),
         "created_at": (

@@ -24,6 +24,8 @@ TODAY = date(2026, 7, 25)
 PAST_DATE = date(2026, 7, 21)
 NOW = datetime(2026, 7, 25, 9, 15, tzinfo=timezone.utc)
 LATER = datetime(2026, 7, 25, 10, 30, tzinfo=timezone.utc)
+ACCOUNT_ID = "123e4567-e89b-12d3-a456-426614174000"
+CATEGORY_ID = "123e4567-e89b-12d3-a456-426614174001"
 
 
 @pytest.fixture
@@ -199,6 +201,8 @@ def test_creation_assigns_identity_date_and_same_timestamps(
     assert transaction.transaction_date == PAST_DATE
     assert transaction.created_at == NOW
     assert transaction.updated_at == NOW
+    assert transaction.account_id is None
+    assert transaction.category_id is None
 
 
 def test_display_ids_are_monotonic_and_not_reused_after_delete(
@@ -415,6 +419,58 @@ def test_update_preserves_identity_and_creation_time_and_advances_update(
     assert updated.category == "Salary"
     assert updated.account == "Bank"
     assert updated.description == "Correction"
+    assert JsonTransactionRepository(
+        repository._data_file
+    ).get_by_display_id(original.display_id) == updated
+
+
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {},
+        {"category": "Dining", "account": "Wallet"},
+    ],
+)
+def test_update_preserves_reference_ids(
+    repository,
+    updates: dict[str, str],
+) -> None:
+    original = repository.create(
+        Transaction(
+            id="transaction-with-references",
+            display_id=None,
+            type="expense",
+            amount=10.0,
+            category="Food",
+            account="Cash",
+            description="Lunch",
+            transaction_date=TODAY,
+            created_at=NOW,
+            updated_at=NOW,
+            account_id=ACCOUNT_ID,
+            category_id=CATEGORY_ID,
+        )
+    )
+    service = TransactionService(
+        repository,
+        today_provider=lambda: TODAY,
+        utc_now_provider=lambda: LATER,
+    )
+
+    updated = service.update_transaction(
+        original.display_id,
+        active_date=TODAY,
+        **updates,
+    )
+
+    assert updated.category == updates.get("category", original.category)
+    assert updated.account == updates.get("account", original.account)
+    assert updated.account_id == ACCOUNT_ID
+    assert updated.category_id == CATEGORY_ID
+    assert updated.id == original.id
+    assert updated.display_id == original.display_id
+    assert updated.created_at == NOW
+    assert updated.updated_at == LATER
     assert JsonTransactionRepository(
         repository._data_file
     ).get_by_display_id(original.display_id) == updated

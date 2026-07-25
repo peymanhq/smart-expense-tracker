@@ -167,7 +167,7 @@ The current document structure is:
 
 ```json
 {
-    "schema_version": 2,
+    "schema_version": 3,
     "metadata": {
         "next_display_id": 3
     },
@@ -178,7 +178,9 @@ The current document structure is:
             "type": "expense",
             "amount": 12.5,
             "category": "Food",
+            "category_id": "category-uuid-or-null",
             "account": "Cash",
+            "account_id": "account-uuid-or-null",
             "description": "Lunch",
             "transaction_date": "2026-07-24",
             "created_at": "2026-07-24T09:15:00+00:00",
@@ -190,15 +192,20 @@ The current document structure is:
 
 `transaction_date` is the financial date. The optional `created_at` and
 `updated_at` fields are timezone-aware UTC metadata and are not used for
-financial period selection.
+financial period selection. `account_id` and `category_id` are optional
+canonical UUID references. The required `account` and `category` strings remain
+stored snapshots and fallbacks for display, search, filtering, and unresolved
+legacy transactions.
 
 `metadata.next_display_id` is a persistent global monotonic counter. Deleting the
 highest transaction does not decrease it, so a deleted display ID is not
 reused. Legacy files whose top level is a transaction list remain readable;
 their next safe value is derived from the highest valid display ID, and they
-are migrated to schema version 2 on the next successful mutation. Missing
-schema metadata is version 1. Legacy `date` maps to `transaction_date`;
-historical missing timestamps remain `None`, and reads never rewrite files.
+are migrated to schema version 3 on the next successful mutation. Missing
+schema metadata is version 1, and schema versions 1 and 2 load missing reference
+fields as `None`. Legacy `date` maps to `transaction_date`; historical missing
+timestamps remain `None`, and reads never rewrite files. Schema version 3
+writes missing references explicitly as JSON `null`.
 
 Missing and empty files represent an empty dataset. Malformed JSON, invalid
 top-level structures, invalid metadata, and malformed transaction entries
@@ -224,7 +231,7 @@ active normalized names. Complete account read-modify-write workflows use a
 cross-process lock, preventing lost updates between application instances.
 The previous list-only account file and companion `accounts_state.json` remain
 readable and migrate on the next save. Accounts remain standalone and do not
-alter the v1.0 transaction JSON schema.
+share persistence with transactions.
 
 Categories use a current list-only `data/categories.json` document and a
 separate `data/categories_state.json` counter. No legacy Category format is
@@ -237,6 +244,11 @@ recovered from the records. Each file uses same-directory atomic replacement.
 State advancement precedes persistence of a newly allocated record, so a
 failed second write can create a harmless ID gap but cannot cause reuse.
 Complete mutations run under a re-entrant cross-process category lock.
+
+The transaction data contract now has space for Account and Category UUIDs, but
+transaction creation still accepts snapshot names without managed references.
+Account/Category existence, activation status, category/type compatibility,
+legacy reconciliation, and CLI selection remain future integration work.
 
 ---
 

@@ -5,6 +5,10 @@ import pytest
 from transaction_factory import create_transaction
 
 
+ACCOUNT_ID = "123e4567-e89b-12d3-a456-426614174000"
+CATEGORY_ID = "123e4567-e89b-12d3-a456-426614174001"
+
+
 def test_create_valid_transaction() -> None:
     transaction = create_transaction(
         transaction_type=" Income ",
@@ -27,6 +31,87 @@ def test_create_valid_transaction() -> None:
     assert transaction.account == "Bank"
     assert transaction.description == "Monthly pay"
     assert transaction.transaction_date == date(2026, 7, 24)
+    assert transaction.account_id is None
+    assert transaction.category_id is None
+
+
+@pytest.mark.parametrize(
+    ("account_id", "category_id"),
+    [
+        (ACCOUNT_ID, None),
+        (None, CATEGORY_ID),
+        (ACCOUNT_ID, CATEGORY_ID),
+    ],
+)
+def test_create_transaction_accepts_optional_canonical_reference_ids(
+    account_id: str | None,
+    category_id: str | None,
+) -> None:
+    transaction = create_transaction(
+        transaction_type="expense",
+        amount="12.50",
+        category=" Food ",
+        account=" Cash ",
+        description="Lunch",
+        transaction_date="2026-07-24",
+        created_at=datetime(2026, 7, 24, 9, 15, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 7, 24, 9, 15, tzinfo=timezone.utc),
+        account_id=account_id,
+        category_id=category_id,
+    )
+
+    assert transaction.account == "Cash"
+    assert transaction.category == "Food"
+    assert transaction.account_id == account_id
+    assert transaction.category_id == category_id
+
+
+def test_create_transaction_accepts_explicit_none_reference_ids() -> None:
+    transaction = create_transaction(
+        transaction_type="expense",
+        amount="10",
+        category="Food",
+        account="Cash",
+        description="Lunch",
+        transaction_date="2026-07-24",
+        created_at=datetime(2026, 7, 24, 9, 15, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 7, 24, 9, 15, tzinfo=timezone.utc),
+        account_id=None,
+        category_id=None,
+    )
+
+    assert transaction.account_id is None
+    assert transaction.category_id is None
+
+
+@pytest.mark.parametrize("field", ["account_id", "category_id"])
+@pytest.mark.parametrize(
+    "value",
+    [
+        "",
+        f" {ACCOUNT_ID}",
+        "not-a-uuid",
+        f"{{{ACCOUNT_ID}}}",
+    ],
+)
+def test_create_transaction_rejects_invalid_reference_ids(
+    field: str,
+    value: str,
+) -> None:
+    values = {
+        "transaction_type": "expense",
+        "amount": "10",
+        "category": "Food",
+        "account": "Cash",
+        "description": "Lunch",
+        "transaction_date": "2026-07-24",
+        "created_at": datetime(2026, 7, 24, 9, 15, tzinfo=timezone.utc),
+        "updated_at": datetime(2026, 7, 24, 9, 15, tzinfo=timezone.utc),
+        field: value,
+    }
+
+    with pytest.raises(ValueError, match="canonical UUID"):
+        create_transaction(**values)
 
 
 @pytest.mark.parametrize(

@@ -20,6 +20,8 @@ class Transaction:
     transaction_date: date
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    account_id: str | None = None
+    category_id: str | None = None
 
     def __post_init__(self) -> None:
         """Enforce typed values without consulting the system clock."""

@@ -186,6 +186,8 @@ class TransactionService:
             updated_at=timestamp,
             transaction_id=existing.id,
             display_id=existing.display_id,
+            account_id=existing.account_id,
+            category_id=existing.category_id,
         )
         try:
             return self._repository.replace(updated)

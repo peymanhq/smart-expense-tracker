@@ -160,7 +160,7 @@ python -m pytest -q
 ```
 
 Tests use pytest temporary paths and do not write to application data files.
-The current suite contains 248 passing tests.
+The current suite contains 292 passing tests.
 
 ## JSON persistence
 
@@ -168,7 +168,7 @@ Runtime data is stored in `data/transactions.json`. The stabilized format is:
 
 ```json
 {
-    "schema_version": 2,
+    "schema_version": 3,
     "metadata": {
         "next_display_id": 3
     },
@@ -179,7 +179,9 @@ Runtime data is stored in `data/transactions.json`. The stabilized format is:
             "type": "expense",
             "amount": 12.5,
             "category": "Food",
+            "category_id": "category-uuid-or-null",
             "account": "Cash",
+            "account_id": "account-uuid-or-null",
             "description": "Lunch",
             "transaction_date": "2026-07-24",
             "created_at": "2026-07-24T09:15:00+00:00",
@@ -201,7 +203,10 @@ next saved transaction uses `T-0004`. Older files containing only a JSON list
 remain readable. Their safe next value is derived from the highest stored
 display ID. Legacy `date` fields map to `transaction_date`; missing historical
 timestamps remain `null` rather than being invented. Reads never migrate data,
-while the next successful mutation writes schema version 2.
+while the next successful mutation writes schema version 3. Schema versions 1
+and 2 load missing `account_id` and `category_id` values as `None`; schema
+version 3 writes missing references explicitly as `null`. The required account
+and category names remain stored snapshots and fallbacks.
 
 A missing or blank data file is treated as an empty dataset. Malformed JSON or
 an invalid top-level structure raises a controlled storage error and is not
@@ -240,7 +245,8 @@ ID. If state is missing, it is recovered from the highest stored category ID.
 - No Excel or PDF export
 - No authentication or synchronization
 - Accounts and categories are not yet linked to transactions
-- Transactions still store their existing free-text `category` and `account`
-  fields; there is no `category_id` or transaction-data migration
+- Transactions can store optional `category_id` and `account_id` UUIDs, but
+  managed validation, CLI selection, and legacy reconciliation are not yet
+  implemented
 - Transfers and Excel import/export are not implemented
 - Transaction amounts still use `float`; exact `Decimal` money is deferred

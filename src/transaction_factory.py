@@ -8,6 +8,7 @@ from id_generator import generator_transaction_id
 from validators import (
     parse_utc_datetime,
     validate_amount,
+    validate_optional_uuid,
     validate_required_text,
     validate_transaction_date,
     validate_transaction_type,
@@ -25,12 +26,16 @@ def create_transaction(
     updated_at: datetime | str,
     transaction_id: str | None = None,
     display_id: str | None = None,
+    account_id: str | None = None,
+    category_id: str | None = None,
 ) -> Transaction:
 
     amount = validate_amount(amount)
     transaction_type = validate_transaction_type(transaction_type)
     category = validate_required_text(category, "Category")
     account = validate_required_text(account, "Account")
+    account_id = validate_optional_uuid(account_id, "Account ID")
+    category_id = validate_optional_uuid(category_id, "Category ID")
     transaction_date = validate_transaction_date(transaction_date)
     created_at = parse_utc_datetime(created_at, "created_at")
     updated_at = parse_utc_datetime(updated_at, "updated_at")
@@ -54,4 +59,6 @@ def create_transaction(
         transaction_date=transaction_date,
         created_at=created_at,
         updated_at=updated_at,
+        account_id=account_id,
+        category_id=category_id,
     )

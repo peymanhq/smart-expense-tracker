@@ -19,10 +19,10 @@ main.py
 The completed date feature adds a selected-date workspace, historical entry,
 date-scoped CRUD, explicit date movement, populated-date browsing, exact/range
 search, and daily/range reports. Transaction mutations are locked, creation
-allocates display IDs atomically, and schema version 2 remains compatible with
+allocates display IDs atomically, and schema version 3 remains compatible with
 legacy transaction files.
 
-The current automated suite contains 248 passing tests. Transaction persistence
+The current automated suite contains 292 passing tests. Transaction persistence
 tests use temporary files and do not modify runtime JSON data.
 
 ## Current Architecture
@@ -53,7 +53,9 @@ content remains unchanged and `updated_at` advances.
 
 `Transaction` is a typed dataclass. `transaction_date` is the financial date.
 Optional `created_at` and `updated_at` values are timezone-aware UTC metadata
-and are never used to select financial periods.
+and are never used to select financial periods. Optional `account_id` and
+`category_id` values hold canonical UUID references, while the required account
+and category names remain stored snapshots and fallbacks.
 
 `search.py` and `report.py` remain pure. Search supports exact, inclusive
 closed-range, and one-sided API date criteria with AND semantics. Reports reuse
@@ -84,14 +86,16 @@ fail before a replacement.
 
 ## Compatibility
 
-Transaction schema version 2 stores `transaction_date`, `created_at`, and
-`updated_at`. Missing schema metadata is treated as version 1. Legacy top-level
-lists and legacy `date` fields remain readable.
+Transaction schema version 3 stores `transaction_date`, timestamps, and
+optional Account and Category UUID references. Missing schema metadata is
+treated as version 1. Schema versions 1 and 2, legacy top-level lists, and
+legacy `date` fields remain readable. Missing reference fields load as `None`.
 
 Matching `date` and `transaction_date` fields are accepted; conflicts fail.
 Missing historical timestamps load as `None`, are never invented, and
 `created_at=None` remains missing after an update. Reads never migrate data.
-The next successful mutation writes schema version 2.
+The next successful mutation writes schema version 3 and represents missing
+references explicitly as JSON `null`.
 
 Unsupported future schema versions and malformed records raise controlled
 storage errors instead of being skipped or overwritten.
@@ -117,9 +121,10 @@ future work.
 
 ### Managed References
 
-Transactions still store free-text account and category values. Managed
-account/category UUID references and migration of historical values remain
-future work.
+Transactions can store optional managed-record UUIDs alongside required
+snapshot names. Account/Category lookup, active-state and category/type
+enforcement, CLI selection, and migration of historical snapshot-only values
+remain future work.
 
 ### Flat JSON Limits
 
