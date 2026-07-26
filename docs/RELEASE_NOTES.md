@@ -1,53 +1,88 @@
-# Smart Expense Tracker v1.0.0
+# Smart Expense Tracker v1.1.0
 
-This planned first official release completes the version 1 stabilization
-cycle. The v1.0.0 release candidate keeps the application focused on
-straightforward local income and expense tracking while making transaction
-identity and JSON persistence significantly safer.
+Released 2026-07-26.
 
-## Highlights
+Smart Expense Tracker v1.1.0 expands the local CLI from transaction tracking
+into managed accounts, managed income/expense categories, and date-based
+financial workflows. It also strengthens the application and persistence
+boundaries while retaining compatibility with v1.0.0 transaction data.
 
-- Add, view, search, filter, update, and delete income and expense transactions
-  from the command line.
-- View income, expense, and balance summaries.
-- Use short display IDs such as `T-0001` while retaining a stable internal UUID.
-- Find display IDs by exact, case-insensitive matches across search, update, and
-  deletion workflows.
+## Major Features
 
-Display IDs now advance from persistent metadata. Deleting the transaction with
-the highest ID does not cause that ID to be reused, and updates retain both the
-original UUID and display ID.
+### Account Management
 
-JSON writes now build and flush a temporary file beside the destination before
-atomically replacing it. Malformed or structurally invalid JSON is reported as
-a controlled storage error, failed writes clean up temporary files, and a
-failed replacement leaves the previous data intact.
+- Add, view, rename, deactivate, and reactivate accounts.
+- Retain stable internal UUIDs and monotonic display IDs such as `A-0001`.
+- Enforce active-name uniqueness while allowing inactive-name reuse.
+- Validate persisted records and protect complete mutations with locking and
+  atomic JSON replacement.
+
+### Category Management
+
+- Manage separate income and expense categories.
+- Add, view, rename, activate, and deactivate categories.
+- Retain stable UUIDs and monotonic display IDs such as `C-0001`.
+- Enforce active-name uniqueness within transaction type and deterministic
+  type/display-ID ordering.
+- Validate persisted records and lock complete mutations.
+
+### Managed Transaction References
+
+Transaction schema version 3 can store optional Account and Category UUIDs
+alongside required name snapshots. Transaction add and update CLI workflows
+list active managed records and accept their display IDs, then pass stable
+UUIDs to `TransactionService`. Newly selected references must exist and be
+active, and categories must match the transaction type. Unrelated updates
+preserve inactive historical references.
+
+### Date-based Transaction Management
+
+- Work in a selected financial date that starts on today.
+- Add, view, update, delete, and explicitly move transactions by financial date.
+- Browse dates that contain transactions.
+- Search exact dates and inclusive ranges.
+- Produce all-time, daily, and inclusive range reports using
+  `transaction_date`, never metadata timestamps.
+- Accept numeric `YYYY-M-D` or `YYYY-MM-DD` input, normalize valid calendar
+  dates to `YYYY-MM-DD`, and reject future dates.
+
+## Validation and Reliability
+
+- Transaction workflows use an application service and repository abstraction.
+- Account, Category, and Transaction mutations use cross-process locks.
+- JSON writes use flushed same-directory temporary files and atomic replacement.
+- Transaction data remains schema-versioned and backward compatible.
+- UUID/display-ID identity is preserved across updates.
+- Invalid-date retries preserve values already selected or entered for an
+  update.
 
 ## Verification
 
-The release has 27 passing pytest tests covering creation, validation, storage,
-IDs, search, updates, deletion, reports, malformed and legacy data, and failed
-atomic writes. Tests use temporary files rather than the application data file.
-Python compilation, `git diff --check`, CLI startup and exit, display-ID
-non-reuse, legacy JSON loading, and failed-replacement preservation were also
-verified. `data/transactions.json` remained unchanged during verification.
+The v1.1.0 release commit passes all 360 pytest tests. Python compilation and
+`git diff --check` also pass. Tests use temporary paths or in-memory fakes and
+do not modify runtime JSON data.
 
-## Upgrading
+## Upgrade and Compatibility Notes
 
-No manual data migration is required. Existing list-only JSON files remain
-readable, and the current metadata-based structure is written on their next
-successful save.
+No manual transaction-data migration is required. Legacy top-level transaction
+lists, schema versions 1 and 2, and legacy `date` fields remain readable. The
+next successful transaction mutation writes schema version 3 with explicit
+nullable managed references. Existing name-only transactions remain usable and
+may be linked to active managed records during update.
 
 ## Known Limitations
 
-This remains a local, single-user CLI using floating-point amounts and
-whole-file JSON persistence. It has no concurrent-writer coordination,
-database, GUI, authentication, synchronization, multi-currency support, or
-Excel/PDF export.
+- Local, single-user CLI only; no authentication or synchronization.
+- Separate JSON files and locks provide soft rather than database-level
+  referential integrity.
+- Explicit managed-reference unlinking and automatic legacy reconciliation are
+  not implemented.
+- Amounts still use `float`.
+- No transfers, multi-currency support, Excel/PDF export, charts, GUI, or
+  SQLite persistence.
 
-## Next Steps
+## Next Planned Version
 
-The immediate next step is publishing v1.0.0. After that release, v1.1.0 is the
-next planned development version, with application-service and repository
-boundaries, exact monetary representation, packaging improvements, and
-continuous integration under consideration.
+v1.2.0 is the next planned version. Its first milestone is continuous
+integration for the existing pytest, compilation, and whitespace checks,
+followed by focused packaging and quality improvements.

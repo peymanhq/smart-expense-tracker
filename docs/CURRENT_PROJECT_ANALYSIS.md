@@ -2,9 +2,9 @@
 
 ## Executive Summary
 
-Smart Expense Tracker is a local command-line application under v1.1.0
-development. Account Management, Category Management, and Date-based
-Transaction Management are implemented on top of JSON persistence.
+Smart Expense Tracker v1.1.0 is a released local command-line application.
+Account Management, Category Management, Date-based Transaction Management,
+and managed transaction references are implemented on top of JSON persistence.
 
 The transaction path now has explicit boundaries:
 
@@ -22,7 +22,7 @@ search, and daily/range reports. Transaction mutations are locked, creation
 allocates display IDs atomically, and schema version 3 remains compatible with
 legacy transaction files.
 
-The current automated suite contains 339 passing tests. Transaction persistence
+The v1.1.0 release suite contains 360 passing tests. Transaction persistence
 tests use temporary files and do not modify runtime JSON data.
 
 ## Current Architecture
@@ -156,9 +156,9 @@ thresholds remain planned.
 
 Keep future work scoped and incremental:
 
-1. Define exact-money representation and migration.
-2. Design account/category transaction references.
-3. Improve packaging and automated quality checks.
+1. Add continuous integration for pytest, compilation, and whitespace checks.
+2. Improve packaging and define a reproducible CLI entry point.
+3. Define exact-money representation and migration.
 4. Add Excel/PDF export and charts only after the data contracts are stable.
 5. Introduce SQLite through another `TransactionRepository` implementation.
 

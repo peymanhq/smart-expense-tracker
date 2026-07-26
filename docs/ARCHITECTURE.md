@@ -10,7 +10,7 @@ The long-term objective is to build a maintainable, testable, and extensible fin
 
 ---
 
-## Current Architecture (v1.1.0 Development)
+## Current Architecture (v1.1.0)
 
 The current application follows this structure:
 
@@ -81,7 +81,7 @@ Account workflows use a focused application-service module so their business
 rules remain independent of CLI input and output.
 
 Category workflows use the same focused service boundary and remain
-independent of transaction creation.
+independent of transaction persistence details.
 
 The function-oriented account and category services also expose public,
 read-only managed-record queries. Account queries list all or only active
@@ -89,7 +89,7 @@ records and resolve canonical UUIDs or normalized display IDs. Category queries
 add active-state and transaction-type filters while retaining the established
 type-then-display-ID ordering. UUID and display-ID lookup includes inactive
 records so historical callers can still resolve them; active-only lists are the
-boundary intended for future selection workflows. These queries return new
+boundary used by transaction selection workflows. These queries return new
 collections, propagate storage errors, and do not modify persisted data.
 `main.py` binds the active-list and normalized display-ID query functions to
 runtime paths for transaction selection. Display IDs remain user-facing keys;
@@ -182,8 +182,9 @@ requiring an exact complete category ID.
 Public query operations are `list_categories()`, `get_category_by_id()`, and
 `get_category_by_display_id()`. Listing can exclude inactive records and filter
 by a validated `income` or `expense` transaction type. UUID and display-ID
-lookup remain status-independent for historical resolution. These boundaries
-do not yet connect categories to transactions.
+lookup remain status-independent for historical resolution. The CLI uses these
+boundaries to select managed categories for transactions; the service validates
+the selected UUID and transaction-type compatibility.
 
 ---
 
@@ -256,8 +257,8 @@ formats, boolean status, and uniqueness of internal IDs, display IDs, and
 active normalized names. Complete account read-modify-write workflows use a
 cross-process lock, preventing lost updates between application instances.
 The previous list-only account file and companion `accounts_state.json` remain
-readable and migrate on the next save. Accounts remain standalone and do not
-share persistence with transactions.
+readable and migrate on the next save. Accounts use separate persistence from
+transactions while their UUIDs may be stored as managed transaction references.
 
 Categories use a current list-only `data/categories.json` document and a
 separate `data/categories_state.json` counter. No legacy Category format is
@@ -291,7 +292,8 @@ and `transaction.py`), transaction application workflows
 (`transaction_repository.py`), construction (`transaction_factory.py`),
 lookup/search (`search.py`), reporting (`report.py`), formatting
 (`formatter.py`), and persistence infrastructure. Account and Category
-Management remain standalone and are not coupled to transaction persistence.
+Management use separate persistence and connect to transactions only through
+service query APIs and optional UUID references.
 
 Replacing JSON later requires another `TransactionRepository` implementation;
 the transaction service and CLI workflow do not need direct storage changes.

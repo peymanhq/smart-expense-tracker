@@ -400,8 +400,8 @@ Accepted
 
 ## Context
 
-Version 1.1.0 introduces Account Management without changing the v1.0
-transaction schema or linking transactions to managed accounts.
+Version 1.1.0 introduces Account Management with separate persistence and later
+adds optional managed Account UUID references to transaction schema version 3.
 
 ## Decision
 
@@ -419,19 +419,20 @@ from the passive `Account` dataclass and the CLI.
 
 Expose read-only service queries for deterministic account listing and lookup
 by canonical internal UUID or normalized display ID. Active-only listing is
-available for future selection workflows, while lookup remains
-status-independent so inactive records stay resolvable for history.
+used by selection workflows, while lookup remains status-independent so
+inactive records stay resolvable for history.
 
 ## Consequences
 
-- Existing transaction data and behavior remain unchanged.
+- Existing transaction data remains readable without manual migration.
 - Deactivated accounts stay available for history and their IDs are not reused.
 - Deactivated accounts can be reactivated when no active name conflict exists.
 - Account changes and display-ID advancement succeed or fail as one file write.
 - Concurrent application instances do not silently overwrite account changes.
 - Malformed account records fail with controlled storage errors.
 - Account workflows can later be reused by interfaces other than the CLI.
-- Accounts and transactions remain intentionally unconnected in this phase.
+- Accounts retain separate persistence and connect to transactions through
+  optional UUID references and stored name snapshots.
 - Callers do not need private lookup helpers or direct account JSON access.
 
 ---
@@ -448,9 +449,9 @@ Accepted
 
 ## Context
 
-Version 1.1.0 needs Category Management without adding `category_id` to
-transactions or changing the published transaction JSON schema. There is no
-existing production Category format requiring migration.
+Version 1.1.0 needs Category Management with separate persistence and later
+adds optional managed Category UUID references to transaction schema version 3.
+There is no existing production Category format requiring migration.
 
 ## Decision
 
@@ -474,7 +475,8 @@ status-independent so inactive records stay resolvable for history.
 
 ## Consequences
 
-- Categories remain standalone and transactions retain their v1.0 schema.
+- Categories retain separate persistence; transactions may store their UUIDs
+  while keeping required name snapshots.
 - The same active name can exist once for income and once for expense.
 - Deactivated records and identifiers remain available and are never deleted.
 - Concurrent mutations do not silently lose records or duplicate identifiers.
@@ -557,8 +559,8 @@ writer.
 
 The CLI does not allocate IDs, generate timestamps, or access JSON. A future
 SQLite implementation can replace the repository without moving storage rules
-into the CLI. Enforcing managed Account and Category references remains
-separate future work.
+into the CLI. Managed Account and Category references are enforced when newly
+supplied.
 
 ---
 

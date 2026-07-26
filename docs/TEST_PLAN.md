@@ -7,7 +7,7 @@ Smart Expense Tracker from regressions.
 
 ---
 
-# v1.0.0 Release-Candidate Result
+# v1.0.0 Release Result
 
 The current automated suite completes successfully:
 
@@ -21,12 +21,12 @@ files. Automated and manual verification therefore protect the real
 
 ---
 
-# Automated Tests
+# v1.1.0 Release Result
 
-The current v1.1.0 development suite completes successfully:
+The v1.1.0 release suite completes successfully:
 
 ```text
-339 passed
+360 passed
 ```
 
 The pytest suite covers:
@@ -156,9 +156,9 @@ The Date-based Transaction Management verification also confirms:
 # Future Testing
 
 Continuous integration and quality tooling remain planned. Future interfaces
-such as a GUI or Telegram bot will require end-to-end tests. SQLite,
-account/category transaction references, Decimal money, import/export, and
-integration-specific tests remain future work.
+such as a GUI or Telegram bot will require end-to-end tests. SQLite, Decimal
+money, import/export, and integration-specific tests remain future work.
+Managed Account/Category transaction references are covered in v1.1.0.
 
 ---
 

@@ -35,15 +35,16 @@ Build a stable command-line expense tracker with the core features required for 
 
 ---
 
-# Version 1.1.0
+# Smart Expense Tracker v1.1.0
 
 ## Objectives
 
-Continue improving reliability and internal design after v1.0.0 is published.
+Add managed Account and Category workflows, date-based transaction management,
+and stronger application and persistence boundaries.
 
 ## Status
 
-In development.
+Released 2026-07-26.
 
 ## Implemented Work
 
@@ -68,21 +69,36 @@ In development.
 - Daily and inclusive date-range financial reports
 - Deterministic clock injection and shared future-date policy
 
-## Planned Work
-
-- Replace `float` with `Decimal`
-- Better exception hierarchy
-- Refactor `main.py`
-- Better project packaging
-- Continuous Integration (CI)
-
 Optional `category_id` and `account_id` transaction fields are established.
 Programmatic managed-reference validation is established in
 `TransactionService`, and transaction add/update now select active Accounts and
 Categories by display ID. Automatic migration of existing free-text values,
-explicit unlinking, transfers, Decimal money, Excel/PDF export,
-charts/dashboard, SQLite, multiple currencies, multiple accounts, and a GUI
-remain future work. Version 1.1.0 is still in development.
+explicit unlinking, and cross-file database constraints remain future work.
+
+---
+
+# Smart Expense Tracker v1.2.0
+
+## Status
+
+Next planned version.
+
+## Focus
+
+Establish repeatable automated quality gates before expanding data formats or
+interfaces.
+
+## Initial Milestones
+
+1. Add continuous integration that runs the existing pytest suite,
+   `compileall`, and `git diff --check` on supported Python versions.
+2. Define packaging metadata and a reproducible CLI entry point without
+   changing runtime behavior.
+3. Add focused coverage reporting and address only demonstrated test gaps.
+
+Excel/PDF export, charts and dashboards, multiple currencies, transfer
+workflows, SQLite, and a GUI remain later roadmap candidates rather than part
+of the initial v1.2.0 milestone.
 
 ---
 

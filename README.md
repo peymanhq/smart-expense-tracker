@@ -1,14 +1,15 @@
 # Smart Expense Tracker
 
-Smart Expense Tracker is a version 1 command-line application for recording
+Smart Expense Tracker is a command-line application for recording
 income and expenses in a local JSON file. It supports common transaction
 workflows without requiring a database or external service.
 
 ## Version status
 
-**Smart Expense Tracker v1.0.0** is the published stable baseline. Development
-of **v1.1.0** is in progress. Standalone Account Management, standalone
-Category Management, and Date-based Transaction Management are implemented.
+**Smart Expense Tracker v1.1.0** is the current released version. It includes
+Account Management, Category Management, Date-based Transaction Management,
+and managed Account/Category selection for transaction entry and updates.
+**v1.2.0** is the next planned development version.
 
 ## Features
 
@@ -110,11 +111,15 @@ Active date: 2026-07-24
 ===>Choose an option: 1
 Choose transaction type: 2
 Amount: 12.50
-Category: Food
-Account: Cash
+Account ID: A-0001
+Category ID: C-0001
 Description: Lunch
 Transaction T-0001 added for 2026-07-24.
 ```
+
+Transaction-date input accepts numeric `YYYY-M-D` or `YYYY-MM-DD` text,
+normalizes it to `YYYY-MM-DD`, rejects impossible calendar dates, and does not
+allow future financial dates.
 
 Use the shown display ID, such as `T-0001`, when updating or deleting a
 transaction. Display-ID lookup ignores surrounding whitespace and letter case,
@@ -132,7 +137,7 @@ Choose **Account Management** to add, list, rename, deactivate, or reactivate
 accounts. Accounts use display IDs such as `A-0001`. Deactivation preserves
 the account record and reactivation restores it unless another active account
 has the same name. Permanent deletion is not available. Account records are
-not yet used by transaction entry in this development phase.
+used by transaction entry and updates through managed selection.
 
 Only active account names must be unique. A new account may reuse an inactive
 account's name, and an inactive account may be renamed to match an active
@@ -143,9 +148,10 @@ Account display-ID input ignores surrounding whitespace, letter case, and
 zero-padding differences, so values such as `a-1` resolve to `A-0001`.
 
 Choose **Category Management** to add, list, rename, activate, or deactivate
-standalone income and expense categories. Categories use persistent display
-IDs such as `C-0001`. The CLI uses a numbered Income/Expense choice, and list
-output is ordered by transaction type and then display ID.
+income and expense categories. Categories use persistent display IDs such as
+`C-0001`. The CLI uses a numbered Income/Expense choice, and list output is
+ordered by transaction type and then display ID. Transaction entry and updates
+offer active categories compatible with the transaction type.
 
 Only active category names must be unique within the same transaction type,
 using trimmed, Unicode-normalized, case-insensitive comparison. `Food /
@@ -160,7 +166,7 @@ python -m pytest -q
 ```
 
 Tests use pytest temporary paths and do not write to application data files.
-The current suite contains 339 passing tests.
+The v1.1.0 release suite contains 360 passing tests.
 
 ## JSON persistence
 
@@ -262,3 +268,9 @@ ID. If state is missing, it is recovered from the highest stored category ID.
 - Referential integrity remains soft across the separate JSON files and locks
 - Transfers and Excel import/export are not implemented
 - Transaction amounts still use `float`; exact `Decimal` money is deferred
+
+## Next planned version
+
+v1.2.0 will begin with automated CI for the existing pytest, compilation, and
+whitespace checks. Broader export, visualization, currency, database, and GUI
+work remains later roadmap scope.

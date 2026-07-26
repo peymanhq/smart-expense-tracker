@@ -8,14 +8,20 @@ The format is based on **Keep a Changelog** and follows **Semantic Versioning**.
 
 ## [Unreleased]
 
+No changes yet.
+
+---
+
+## [1.1.0] - 2026-07-26
+
 ### Added
 
-- Standalone account creation, listing, renaming, deactivation, and reactivation
+- Account creation, listing, renaming, deactivation, and reactivation
 - Internal account UUIDs and user-facing `A-0001` display IDs
 - Separate atomic JSON persistence for account records and display-ID state
 - Account Management CLI submenu
 - Focused automated coverage for account rules and persistence
-- Standalone income/expense category creation, listing, renaming, activation,
+- Income/expense category creation, listing, renaming, activation,
   and deactivation
 - Internal category UUIDs and persistent `C-0001` display IDs
 - Strict category schema and uniqueness validation
@@ -34,18 +40,21 @@ The format is based on **Keep a Changelog** and follows **Semantic Versioning**.
 - Daily and inclusive date-range reports with transaction counts
 - Deterministic coverage for date policy, clocks, locking, concurrency,
   compatibility, CLI workspaces, search, and reports
+- Optional managed Account and Category UUID references in transaction schema
+  version 3
+- Public Account and Category list/lookup query APIs
+- Managed Account/Category selection in transaction add and update CLI flows
 
 ### Changed
 
 - Shared the atomic JSON writer between transaction and account persistence
-- Began v1.1.0 development from the published v1.0.0 baseline
 - Consolidated account records and display-ID metadata into one atomic document
 - Added automatic migration from legacy account-list and state files
 - Normalized account display-ID input and Unicode account names
 - Paused after account operations until the user returns to the submenu
 - Added deterministic category ordering by transaction type and display ID
-- Kept Category Management standalone without changing transaction fields or
-  transaction JSON
+- Stored managed references alongside required Account and Category name
+  snapshots while preserving legacy free-text compatibility
 - Made `transaction_date` the financial date used by CRUD, search, and reports
 - Moved transaction date/timestamp rules into `TransactionService` and JSON
   responsibilities into the repository/storage boundary
@@ -55,6 +64,8 @@ The format is based on **Keep a Changelog** and follows **Semantic Versioning**.
   rewriting files on read
 - Documented metadata-only updates as explicit update events that advance
   `updated_at`
+- Accepted numeric `YYYY-M-D` and `YYYY-MM-DD` transaction-date input and
+  normalized valid dates to canonical ISO form
 
 ### Fixed
 
@@ -78,21 +89,25 @@ The format is based on **Keep a Changelog** and follows **Semantic Versioning**.
   `created_at=None` semantics across updates
 - Rejected future financial dates, ambiguous exact/range queries, and reversed
   ranges through one shared policy
+- Preserved values already entered during invalid transaction-date retries in
+  the update workflow
+- Rejected missing, inactive, or type-incompatible newly selected managed
+  transaction references while preserving inactive historical references
 
 ### Testing
 
-- Confirmed 248 passing pytest tests using disposable transaction paths
+- Confirmed 360 passing pytest tests in the release commit
 - Confirmed Python compilation, whitespace-safe diffs, and unchanged runtime
   JSON data
 
 ### Documentation
 
 - Updated the README, architecture, decisions, roadmap, test plan, changelog,
-  and current project analysis for Date-based Transaction Management
+  release notes, and current project analysis for the v1.1.0 release
 
 ---
 
-## [1.0.0] - Released
+## [1.0.0] - 2026-07-24
 
 ### Added
 
