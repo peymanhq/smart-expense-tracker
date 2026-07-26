@@ -6,6 +6,11 @@ __pycache__/
 .venv/
 venv/
 
+# Python packaging
+build/
+dist/
+*.egg-info/
+
 # macOS files
 .DS_Store
 

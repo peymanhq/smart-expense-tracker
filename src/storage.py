@@ -22,8 +22,7 @@ from validators import (
     validate_transaction_date,
 )
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_FILE = BASE_DIR / "data" / "transactions.json"
+DATA_FILE = Path("data") / "transactions.json"
 TRANSACTION_SCHEMA_VERSION = 3
 _LOCK_STATE = local()
 

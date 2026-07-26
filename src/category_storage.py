@@ -21,9 +21,8 @@ from id_generator import (
 )
 from json_storage import StorageError, write_json_atomic
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-CATEGORIES_FILE = BASE_DIR / "data" / "categories.json"
-CATEGORY_STATE_FILE = BASE_DIR / "data" / "categories_state.json"
+CATEGORIES_FILE = Path("data") / "categories.json"
+CATEGORY_STATE_FILE = Path("data") / "categories_state.json"
 
 _LOCK_STATE = local()
 

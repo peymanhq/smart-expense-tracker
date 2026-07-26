@@ -10,7 +10,7 @@ The long-term objective is to build a maintainable, testable, and extensible fin
 
 ---
 
-## Current Architecture (v1.2.0 development)
+## Current Architecture (v1.3.0 development)
 
 The current application follows this structure:
 
@@ -544,3 +544,39 @@ Every new feature should follow these rules:
 - Prefer composition over duplication.
 - Keep modules small and focused.
 - Add documentation for architectural changes.
+
+---
+
+## Packaging and Delivery Boundary
+
+`pyproject.toml` is the canonical definition for build metadata, supported
+Python, dependencies, the flat-module installation map, and the console
+script. Setuptools builds the modules already present in `src/`; packaging does
+not introduce a second application architecture or move business logic.
+
+The installed startup flow is:
+
+```text
+expense-tracker
+    -> main:main
+    -> existing CLI menus and dependency construction
+    -> application services and adapters
+```
+
+`python3 src/main.py` reaches the same callable through the module's guarded
+runner. Importing `main` constructs dependencies but does not enter the input
+loop or read/write runtime files.
+
+Default JSON paths and default Excel output are current-working-directory
+relative (`data/` and `exports/`). This makes the working directory the
+explicit runtime workspace for both source and installed execution and keeps
+mutable data outside the wheel, site-packages, and virtual environments.
+Changing the process working directory selects a different independent
+workspace; records from another workspace are not discovered automatically.
+
+GitHub Actions is delivery infrastructure rather than business logic. For
+pushes and pull requests targeting `main`, its Python 3.10/3.13 matrix installs
+`.[dev]`, runs the complete pytest suite, compiles `src` and `tests`, checks the
+event's changed content for whitespace errors, builds both distributions,
+installs the built wheel into a clean environment, and smoke-tests its console
+command with deterministic exit input.

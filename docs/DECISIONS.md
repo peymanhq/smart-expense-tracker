@@ -745,3 +745,55 @@ stored names.
 - CLI, business calculations, persistence, and Excel formatting stay separate.
 - Failed saves do not leave partial final workbooks.
 - Excel import, PDF output, charts, and currency conversion remain out of scope.
+
+---
+
+# ADR-025
+
+## Title
+
+Package the existing flat modules and delegate the console script to `main`.
+
+## Status
+
+Accepted
+
+## Context
+
+v1.3.0 needs a standards-based build, installable command, and repeatable CI
+without a repository-wide module move or import rewrite. The application
+already has flat modules in `src/`, absolute sibling imports, and a guarded
+`main.main()` orchestration callable.
+
+Source-relative storage defaults would resolve inside a virtual environment
+after a wheel installation, which is not a safe mutable-data boundary.
+
+## Decision
+
+`pyproject.toml` is canonical for project metadata, dependencies, setuptools
+build configuration, and development extras. It explicitly maps every current
+flat source module as a `py-module`. The `expense-tracker` script targets
+`main:main`, so installed and direct-source execution use one orchestration
+path with no duplicated menu or dependency construction.
+
+Default JSON paths use `data/` beneath the current working directory. Default
+Excel output already uses the same workspace convention through `exports/`.
+Running `python3 src/main.py` from the repository root therefore retains its
+existing locations, while wheel installations do not write under
+site-packages.
+
+CI is intentionally limited to the complete tests, source/test compilation,
+event-range whitespace checks, distribution builds, and installed-command
+smoke verification on Python 3.10 and 3.13.
+
+## Consequences
+
+- The existing flat imports and architecture remain intact.
+- All source modules must remain listed in `pyproject.toml`; a focused test
+  detects omissions.
+- Users choose their runtime workspace by choosing the command's working
+  directory. Changing directories selects different data and may make records
+  from the previous workspace appear missing.
+- `requirements.txt` remains only a compatibility shortcut to `.[dev]`.
+- Linting, typing, coverage policy, publication, release automation, and a
+  future namespaced-package migration remain deferred.

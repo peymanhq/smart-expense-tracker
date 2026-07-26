@@ -1,3 +1,46 @@
+# Smart Expense Tracker v1.3.0
+
+In development; not yet released or published.
+
+v1.3.0 adds professional delivery infrastructure while preserving every
+financial workflow and persistence schema from v1.2.0.
+
+## User-visible Improvements
+
+- Install and start the application with `expense-tracker`.
+- Continue using `python3 src/main.py` during repository development.
+- Build standards-compliant source and wheel distributions from
+  `pyproject.toml`.
+- Receive automated test and build feedback through GitHub Actions.
+
+The installed command delegates directly to the existing `main.main`
+orchestration callable. It does not duplicate menus, bypass services, expose
+UUIDs, or change Account, Category, Transaction, report, or Excel behavior.
+
+Runtime JSON and default Excel files remain workspace-local under `data/` and
+`exports/`. No package publication, database migration, exact-money migration,
+or financial feature is part of this version.
+
+## Development Verification
+
+The v1.3.0 development suite contains 391 passing tests. CI and local release
+checks cover Python compilation, changed-content whitespace checks, source and
+wheel builds, editable installation, and deterministic installed-command
+startup and exit.
+
+---
+
+# Smart Expense Tracker v1.2.0
+
+Released 2026-07-26.
+
+v1.2.0 adds atomic Excel reporting with Transactions, Summary, and Category
+Summary worksheets. It resolves managed names without exposing UUIDs, confirms
+overwrites, and preserves all JSON and financial behavior. The release commit
+passes 385 tests.
+
+---
+
 # Smart Expense Tracker v1.1.0
 
 Released 2026-07-26.
@@ -81,10 +124,8 @@ may be linked to active managed records during update.
 - No transfers, multi-currency support, Excel/PDF export, charts, GUI, or
   SQLite persistence.
 
-## Next Planned Version
+## Later Versions
 
-v1.2.0 is in development. Its implemented Excel reporting scope exports all
-transactions plus financial and category summaries through a new CLI option.
-It uses resolved managed names, protects existing destinations with explicit
-confirmation, and writes `.xlsx` files atomically. Excel import, PDF output,
-charts, exact-money migration, CI, and packaging remain separate work.
+v1.2.0 subsequently delivered Excel transaction, financial, and category
+summaries. v1.3.0 is now in development for packaging and CI. Excel import, PDF
+output, charts, and exact-money migration remain separate work.

@@ -116,7 +116,7 @@ The pytest suite covers:
 
 ---
 
-# v1.2.0 Development Result
+# v1.2.0 Release Result
 
 The Excel export development suite completes successfully:
 
@@ -131,11 +131,41 @@ legacy and managed-name handling, optional timestamps, empty datasets,
 non-mutation, destination validation, overwrite policy, atomic failure cleanup,
 and CLI data/query orchestration. All output uses pytest temporary paths.
 
+---
+
+# v1.3.0 Development Result
+
+The packaging and CI development suite completes successfully:
+
+```text
+391 passed
+```
+
+The additional tests verify canonical metadata and dependency declarations,
+the complete flat-module installation map, the valid `main:main` console
+target, deterministic CLI exit, import safety, and current-workspace runtime
+paths.
+
 Run the suite from the repository root:
 
 ```bash
 python -m pytest -q
 ```
+
+Local and CI quality gates also run:
+
+```bash
+python -m compileall -q src tests
+git diff --check
+python -m build
+```
+
+GitHub Actions exercises Python 3.10 and 3.13. It installs `.[dev]`, checks the
+full event commit range for whitespace errors, builds a source distribution
+and wheel, installs that wheel into a clean temporary environment, confirms
+`expense-tracker` is installed, and sends controlled `0` input from a temporary
+workspace. Release verification repeats the clean wheel installation and
+verifies imports from outside the repository.
 
 ---
 
@@ -172,10 +202,11 @@ The Date-based Transaction Management verification also confirms:
 
 # Future Testing
 
-Continuous integration and quality tooling remain planned. Future interfaces
+Linting, static typing, and coverage policy remain planned. Future interfaces
 such as a GUI or Telegram bot will require end-to-end tests. SQLite, Decimal
 money, imports, PDF, charts, and other integration-specific tests remain future
-work. Excel export coverage is included in v1.2.0.
+work. Excel export coverage is included in v1.2.0; packaging and CI coverage is
+included in v1.3.0.
 
 ---
 
