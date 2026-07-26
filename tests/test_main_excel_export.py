@@ -47,9 +47,11 @@ def records():
 
 
 def test_empty_destination_uses_dated_default_and_resolved_names(
+    tmp_path,
     monkeypatch,
     capsys,
 ) -> None:
+    monkeypatch.chdir(tmp_path)
     set_inputs(monkeypatch, [""])
     service = ExportService(["transaction"])
     accounts, categories = records()
@@ -155,9 +157,11 @@ def test_accepting_overwrite_preserves_mappings_and_exports_once(
 
 
 def test_expected_export_error_is_displayed(
+    tmp_path,
     monkeypatch,
     capsys,
 ) -> None:
+    monkeypatch.chdir(tmp_path)
     set_inputs(monkeypatch, ["output.xlsx"])
 
     def exporter(*args, **kwargs):
@@ -188,8 +192,10 @@ def test_main_menu_dispatches_excel_export(monkeypatch) -> None:
 
 
 def test_export_orchestration_does_not_call_mutating_service_methods(
+    tmp_path,
     monkeypatch,
 ) -> None:
+    monkeypatch.chdir(tmp_path)
     set_inputs(monkeypatch, ["output.xlsx"])
 
     class ReadOnlyService(ExportService):
