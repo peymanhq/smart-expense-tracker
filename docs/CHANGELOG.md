@@ -6,9 +6,22 @@ The format is based on **Keep a Changelog** and follows **Semantic Versioning**.
 
 ---
 
-## [Unreleased]
+## [1.2.0] - Unreleased
 
-No changes yet.
+### Added
+
+- Excel transaction export through the main CLI
+- Formatted Transactions, Summary, and Category Summary worksheets
+- Account/Category name resolution without exposing internal UUIDs
+- Atomic `.xlsx` saving, extension validation, default dated destinations, and
+  explicit overwrite confirmation
+- Focused workbook-content, failure-atomicity, empty-data, and CLI tests
+- `openpyxl>=3.1,<4.0` dependency
+
+### Documentation
+
+- Updated architecture, roadmap, decisions, test plan, release notes, current
+  analysis, and usage documentation for the v1.2.0 Excel export scope
 
 ---
 

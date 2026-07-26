@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from datetime import date
 from functools import partial
+from pathlib import Path
 from typing import TypeVar
 
 from account import Account
@@ -29,6 +30,11 @@ from category_service import (
 from category_storage import CATEGORIES_FILE, CATEGORY_STATE_FILE
 from clock import TodayProvider, local_today
 from date_policy import ValidatedDateQuery
+from excel_exporter import (
+    ExcelExportError,
+    export_transactions_to_excel,
+    normalize_excel_destination,
+)
 from formatter import format_transactions
 from json_storage import StorageError
 from report import (
@@ -92,6 +98,7 @@ AccountList = Callable[[], list[Account]]
 CategoryList = Callable[..., list[Category]]
 AccountDisplayLookup = Callable[[str], Account | None]
 CategoryDisplayLookup = Callable[[str], Category | None]
+ExcelExporter = Callable[..., Path]
 
 """==============Handles Fanection================"""
 
@@ -440,6 +447,63 @@ def financial_report_menu(
         handle_date_range_report(service)
     elif choice != "0":
         print("Invalid report choice.")
+
+
+def handle_excel_export(
+    service: TransactionService | None = None,
+    *,
+    today_provider: TodayProvider | None = None,
+    account_list: AccountList | None = None,
+    category_list: CategoryList | None = None,
+    exporter: ExcelExporter = export_transactions_to_excel,
+) -> None:
+    """Gather report data and coordinate one safe Excel export."""
+    service = _selected_transaction_service(service)
+    today_provider = (
+        TRANSACTION_TODAY_PROVIDER
+        if today_provider is None
+        else today_provider
+    )
+    account_list = list_accounts if account_list is None else account_list
+    category_list = list_categories if category_list is None else category_list
+    default_destination = Path("exports") / (
+        f"smart_expense_tracker_{today_provider().isoformat()}.xlsx"
+    )
+    entered_destination = input(
+        f"Destination [{default_destination}]: "
+    ).strip()
+
+    try:
+        destination = normalize_excel_destination(
+            entered_destination or default_destination
+        )
+        overwrite = False
+        if destination.exists():
+            confirmation = input(
+                f"{destination} already exists. Overwrite? (y/N): "
+            ).strip().casefold()
+            if confirmation not in {"y", "yes"}:
+                print("Excel export cancelled.")
+                return
+            overwrite = True
+
+        transactions = service.list_transactions()
+        accounts = account_list()
+        categories = category_list()
+        result = exporter(
+            transactions,
+            destination,
+            account_names={account.id: account.name for account in accounts},
+            category_names={
+                category.id: category.name for category in categories
+            },
+            overwrite=overwrite,
+        )
+    except (ExcelExportError, StorageError, OSError) as error:
+        print(f"Excel export error: {error}")
+        return
+
+    print(f"Excel workbook exported to {result.resolve()}")
 
 
 def handle_view_transactions(
@@ -1013,6 +1077,7 @@ MENU_ACTIONS = {
     "4": handle_search,
     "5": account_management_menu,
     "6": category_management_menu,
+    "7": handle_excel_export,
 }
 
 """=================Main fanection=================="""
@@ -1032,6 +1097,7 @@ def main() -> None:
         print("4. Search")
         print("5. Account Management")
         print("6. Category Management")
+        print("7. Export transactions to Excel")
         print("0. Exit")
 
         choice = input("\n===>Choose an option: ")

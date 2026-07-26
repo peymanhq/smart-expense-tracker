@@ -83,6 +83,8 @@ may be linked to active managed records during update.
 
 ## Next Planned Version
 
-v1.2.0 is the next planned version. Its first milestone is continuous
-integration for the existing pytest, compilation, and whitespace checks,
-followed by focused packaging and quality improvements.
+v1.2.0 is in development. Its implemented Excel reporting scope exports all
+transactions plus financial and category summaries through a new CLI option.
+It uses resolved managed names, protects existing destinations with explicit
+confirmation, and writes `.xlsx` files atomically. Excel import, PDF output,
+charts, exact-money migration, CI, and packaging remain separate work.

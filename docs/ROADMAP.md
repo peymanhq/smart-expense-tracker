@@ -81,24 +81,24 @@ explicit unlinking, and cross-file database constraints remain future work.
 
 ## Status
 
-Next planned version.
+In development.
 
 ## Focus
 
-Establish repeatable automated quality gates before expanding data formats or
-interfaces.
+Add a safe, professional Excel reporting output while preserving the existing
+application and persistence boundaries.
 
-## Initial Milestones
+## Implemented Scope
 
-1. Add continuous integration that runs the existing pytest suite,
-   `compileall`, and `git diff --check` on supported Python versions.
-2. Define packaging metadata and a reproducible CLI entry point without
-   changing runtime behavior.
-3. Add focused coverage reporting and address only demonstrated test gaps.
+- Excel transaction export from the CLI
+- Transactions, Summary, and Category Summary worksheets
+- Resolved managed Account/Category names without exposing internal UUIDs
+- Existing-destination confirmation and atomic workbook replacement
+- Empty-dataset support and focused workbook/CLI test coverage
 
-Excel/PDF export, charts and dashboards, multiple currencies, transfer
-workflows, SQLite, and a GUI remain later roadmap candidates rather than part
-of the initial v1.2.0 milestone.
+Continuous integration, packaging, Excel import, PDF export, workbook charts,
+dashboards, multiple currencies, transfers, SQLite, Telegram integration, and
+a GUI remain separate future work.
 
 ---
 
@@ -178,7 +178,7 @@ Excel integration.
 ## Planned Work
 
 - Excel import
-- Excel export
+- Additional Excel export formats and templates
 - Dashboard generation
 - Templates
 - Batch transaction import

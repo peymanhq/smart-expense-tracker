@@ -2,7 +2,8 @@
 
 ## Executive Summary
 
-Smart Expense Tracker v1.1.0 is a released local command-line application.
+Smart Expense Tracker v1.1.0 is released, and v1.2.0 Excel export is in
+development.
 Account Management, Category Management, Date-based Transaction Management,
 and managed transaction references are implemented on top of JSON persistence.
 
@@ -22,7 +23,7 @@ search, and daily/range reports. Transaction mutations are locked, creation
 allocates display IDs atomically, and schema version 3 remains compatible with
 legacy transaction files.
 
-The v1.1.0 release suite contains 360 passing tests. Transaction persistence
+The current suite contains 385 passing tests. Transaction persistence
 tests use temporary files and do not modify runtime JSON data.
 
 ## Current Architecture
@@ -152,6 +153,15 @@ larger datasets.
 Packaging, continuous integration, linting, static type checking, and coverage
 thresholds remain planned.
 
+### Excel Reporting Adapter
+
+`excel_exporter.py` receives detached transactions and managed-name mappings
+from the CLI/service boundary. It creates Transactions, Summary, and Category
+Summary worksheets, reuses pure report calculations, and saves through
+same-directory temporary output plus atomic replacement. It never reads JSON,
+depends on a concrete repository, or mutates application state. Excel import,
+charts, PDF output, and exact-money migration remain deferred.
+
 ## Recommended Next Work
 
 Keep future work scoped and incremental:
@@ -159,7 +169,7 @@ Keep future work scoped and incremental:
 1. Add continuous integration for pytest, compilation, and whitespace checks.
 2. Improve packaging and define a reproducible CLI entry point.
 3. Define exact-money representation and migration.
-4. Add Excel/PDF export and charts only after the data contracts are stable.
+4. Extend reporting formats only after the Excel output contract is stable.
 5. Introduce SQLite through another `TransactionRepository` implementation.
 
 Multiple accounts, multiple currencies, transfers, dashboards, a GUI, and

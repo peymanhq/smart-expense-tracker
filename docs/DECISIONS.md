@@ -707,3 +707,41 @@ remain unsupported.
 - Separate JSON files and locks provide soft, not database-level, referential
   integrity.
 - Explicit unlinking and automatic legacy reconciliation remain future work.
+
+---
+
+# ADR-024
+
+## Title
+
+Treat Excel as an atomic reporting output adapter.
+
+## Status
+
+Accepted
+
+## Context
+
+v1.2.0 needs a human-readable workbook without coupling reporting to JSON or
+turning `.xlsx` files into another transaction store.
+
+## Decision
+
+`main.py` obtains transactions through `TransactionService` and managed names
+through existing read-only Account/Category service queries. It passes those
+detached values to `excel_exporter.py`, which owns workbook construction and
+formatting and reuses `report.py` for financial totals.
+
+The exporter has no repository or JSON dependency. Existing destinations are
+rejected unless the CLI explicitly confirms overwrite. Workbooks save to a
+same-directory temporary file before atomic replacement. Referenced UUIDs that
+cannot be resolved export as blank; legacy snapshot-only records retain their
+stored names.
+
+## Consequences
+
+- Excel remains an output artifact rather than persistence.
+- Internal transaction, Account, and Category UUIDs are not exposed.
+- CLI, business calculations, persistence, and Excel formatting stay separate.
+- Failed saves do not leave partial final workbooks.
+- Excel import, PDF output, charts, and currency conversion remain out of scope.

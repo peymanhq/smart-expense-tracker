@@ -9,7 +9,8 @@ workflows without requiring a database or external service.
 **Smart Expense Tracker v1.1.0** is the current released version. It includes
 Account Management, Category Management, Date-based Transaction Management,
 and managed Account/Category selection for transaction entry and updates.
-**v1.2.0** is the next planned development version.
+**v1.2.0** is in development and adds Excel transaction export with financial
+and category summaries.
 
 ## Features
 
@@ -22,6 +23,7 @@ and managed Account/Category selection for transaction entry and updates.
 - Add, view, rename, activate, and deactivate income/expense categories
 - Search and filter by exact date or inclusive date range
 - Calculate all-time, daily, and inclusive date-range financial reports
+- Export all transactions and financial summaries to an Excel workbook
 - Validate amounts, dates, transaction types, and required fields
 - Persist data locally in JSON
 - Keep an internal UUID separate from the user-facing display ID
@@ -52,6 +54,7 @@ smart-expense-tracker/
 │   ├── transaction_factory.py
 │   ├── id_generator.py      # UUID and display-ID formatting/calculation
 │   ├── report.py            # Summary and filtering logic
+│   ├── excel_exporter.py    # Formatted, atomic .xlsx report generation
 │   └── search.py            # Search and exact display-ID lookup
 ├── tests/                   # pytest automated tests
 ├── requirements.txt
@@ -75,7 +78,7 @@ On Windows PowerShell, activate it with:
 .venv\Scripts\Activate.ps1
 ```
 
-Install the development dependency:
+Install the runtime and development dependencies:
 
 ```bash
 python -m pip install -r requirements.txt
@@ -133,6 +136,28 @@ are ordered by newest financial date and then ascending numeric display ID.
 Financial Reports provides all-time, daily, and inclusive date-range totals for
 income, expenses, balance, and transaction count.
 
+Choose **Export transactions to Excel** from the main menu to create a
+formatted workbook. Press Enter at the destination prompt to use
+`exports/smart_expense_tracker_YYYY-MM-DD.xlsx`, or enter another path. A
+missing extension is normalized to `.xlsx`; other extensions are rejected. If
+the destination exists, the CLI asks before overwriting it.
+
+The workbook contains:
+
+- **Transactions** — display ID, financial transaction date, readable type,
+  amount, description, resolved Account and Category names, and optional
+  creation/update timestamps. Internal UUIDs are not exposed.
+- **Summary** — total income, total expense, balance, and total/income/expense
+  transaction counts.
+- **Category Summary** — category/type totals and counts, with income and
+  expense groups kept separate.
+
+For example, choose menu option `7`, press Enter to accept the default path,
+and confirm overwrite only if a report for that date already exists. Workbook
+writes use a temporary file and atomic replacement, so a failed save does not
+leave a partial final report. Excel is an output format only: import, formulas,
+charts, PDF export, and currency conversion are not included.
+
 Choose **Account Management** to add, list, rename, deactivate, or reactivate
 accounts. Accounts use display IDs such as `A-0001`. Deactivation preserves
 the account record and reactivation restores it unless another active account
@@ -166,7 +191,7 @@ python -m pytest -q
 ```
 
 Tests use pytest temporary paths and do not write to application data files.
-The v1.1.0 release suite contains 360 passing tests.
+The v1.2.0 development suite contains 385 passing tests.
 
 ## JSON persistence
 
@@ -261,16 +286,16 @@ ID. If state is missing, it is recovered from the highest stored category ID.
 
 - Local, single-user command-line application only
 - No database, GUI, charts, or multi-currency support
-- No Excel or PDF export
+- No Excel import, PDF export, or workbook charts
 - No authentication or synchronization
 - Transactions use managed Account and Category selection in the CLI, but
   explicit unlinking and automatic legacy reconciliation are not implemented
 - Referential integrity remains soft across the separate JSON files and locks
-- Transfers and Excel import/export are not implemented
+- Transfers and Excel import are not implemented
 - Transaction amounts still use `float`; exact `Decimal` money is deferred
 
 ## Next planned version
 
-v1.2.0 will begin with automated CI for the existing pytest, compilation, and
-whitespace checks. Broader export, visualization, currency, database, and GUI
-work remains later roadmap scope.
+v1.2.0 includes Excel transaction export and workbook summaries. CI, packaging,
+exact-money migration, visualization, currency, database, and GUI work remain
+separate roadmap scope.

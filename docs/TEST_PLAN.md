@@ -114,6 +114,23 @@ The pytest suite covers:
 - Category Management main-menu dispatch, numbered type choice, view
   formatting, submenu Back behavior, and controlled service/storage errors
 
+---
+
+# v1.2.0 Development Result
+
+The Excel export development suite completes successfully:
+
+```text
+385 passed
+```
+
+The additional tests reopen real workbooks with `openpyxl` and verify sheet
+order, headers, transaction fields and dates, existing float amount semantics,
+financial/count summaries, category/type grouping, deterministic ordering,
+legacy and managed-name handling, optional timestamps, empty datasets,
+non-mutation, destination validation, overwrite policy, atomic failure cleanup,
+and CLI data/query orchestration. All output uses pytest temporary paths.
+
 Run the suite from the repository root:
 
 ```bash
@@ -157,8 +174,8 @@ The Date-based Transaction Management verification also confirms:
 
 Continuous integration and quality tooling remain planned. Future interfaces
 such as a GUI or Telegram bot will require end-to-end tests. SQLite, Decimal
-money, import/export, and integration-specific tests remain future work.
-Managed Account/Category transaction references are covered in v1.1.0.
+money, imports, PDF, charts, and other integration-specific tests remain future
+work. Excel export coverage is included in v1.2.0.
 
 ---
 
