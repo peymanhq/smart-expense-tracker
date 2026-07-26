@@ -10,7 +10,7 @@ The long-term objective is to build a maintainable, testable, and extensible fin
 
 ---
 
-## Current Architecture (v1.1.0)
+## Current Architecture (v1.2.0 development)
 
 The current application follows this structure:
 
@@ -34,6 +34,7 @@ main.py
   │     └── date_policy.py
   ├── validators.py
   ├── report.py
+  ├── excel_exporter.py
   ├── search.py
   ├── formatter.py
   ├── transaction.py
@@ -64,6 +65,7 @@ main.py
 | `validators.py` | Input validation |
 | `storage.py` | Versioned schema handling, locking, validation, and JSON persistence |
 | `report.py` | Pure financial aggregation over selected transactions |
+| `excel_exporter.py` | In-memory workbook construction, Excel formatting, and atomic `.xlsx` saving |
 | `search.py` | Pure date/text filtering, ordering, and display-ID lookup |
 | `formatter.py` | Terminal formatting |
 | `id_generator.py` | UUID creation and display-ID formatting, parsing, and legacy-state calculation |
@@ -72,6 +74,30 @@ main.py
 `TransactionService` coordinates transaction workflows without terminal or
 JSON access. `TransactionRepository` isolates the application layer from the
 current JSON implementation.
+
+### Excel Export Data Flow
+
+```text
+CLI (`main.py`)
+  -> Transaction and managed-record query services
+  -> transactions + Account/Category name mappings
+  -> `excel_exporter.py` + pure `report.py` calculations
+  -> atomic `.xlsx` reporting artifact
+```
+
+The CLI owns destination input and overwrite confirmation. It obtains all
+transactions through `TransactionService`, obtains active and inactive managed
+records through the established read-only service queries, and passes detached
+domain data and UUID-to-name mappings to the exporter. Legacy records without
+UUIDs retain their stored name snapshots; a referenced UUID that cannot be
+resolved produces a neutral blank rather than an invented name.
+
+`excel_exporter.py` owns workbook sheets, cell population, number/date formats,
+column widths, filters, frozen headers, and safe saving. It reuses
+`calculate_financial_summary()` for totals and never reads JSON or depends on
+`JsonTransactionRepository`. Excel therefore remains an output adapter, not a
+persistence implementation. The exporter writes a same-directory temporary
+workbook and atomically replaces the final path only after a complete save.
 
 `main.py` also composes `TransactionService` with the public Account and
 Category UUID query functions. The service receives only lookup callables and
