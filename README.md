@@ -6,11 +6,11 @@ workflows without requiring a database or external service.
 
 ## Version status
 
-**Smart Expense Tracker v1.1.0** is the current released version. It includes
+**Smart Expense Tracker v1.2.0** is the current released version. It includes
 Account Management, Category Management, Date-based Transaction Management,
-and managed Account/Category selection for transaction entry and updates.
-**v1.2.0** is in development and adds Excel transaction export with financial
-and category summaries.
+managed Account/Category selection, and Excel reporting. **v1.3.0** is in
+development and adds standards-based packaging, an installed CLI command, and
+continuous integration without changing financial workflows.
 
 ## Features
 
@@ -33,7 +33,9 @@ and category summaries.
 
 ```text
 smart-expense-tracker/
+├── .github/workflows/ci.yml # Automated test and build quality gates
 ├── data/                    # Runtime JSON data (created when needed)
+├── pyproject.toml           # Canonical packaging and dependency metadata
 ├── src/
 │   ├── main.py              # CLI and workflow orchestration
 │   ├── account.py           # Account dataclass
@@ -78,19 +80,42 @@ On Windows PowerShell, activate it with:
 .venv\Scripts\Activate.ps1
 ```
 
-Install the runtime and development dependencies:
+Install the project and its development dependencies:
 
 ```bash
-python -m pip install -r requirements.txt
+python -m pip install -e ".[dev]"
 ```
+
+`pyproject.toml` is the canonical dependency definition. For compatibility,
+running `python -m pip install -r requirements.txt` from the repository root
+performs the same editable development installation. A runtime-only
+installation uses `python -m pip install .`.
 
 ## Running the application
 
-From the repository root:
+After installation, run:
 
 ```bash
-python src/main.py
+expense-tracker
 ```
+
+The direct development workflow remains available from the repository root:
+
+```bash
+python3 src/main.py
+```
+
+Runtime JSON is resolved from `data/` beneath the current working directory.
+Run the command from the workspace whose data you intend to use. This preserves
+the repository-root workflow and prevents an installed wheel from writing data
+inside site-packages or a virtual environment. Default Excel output similarly
+uses `exports/` beneath the current working directory.
+
+Changing directories selects a different, independent workspace. For example,
+running once from `Documents` and later from `Desktop` uses different `data/`
+directories, so the earlier records will appear missing until the command is
+run again from `Documents`. Use one consistent workspace directory for normal
+operation.
 
 Choose **Transaction Management** to open a date-scoped workspace. It starts
 with today as the active date. Change the active date to enter or manage
@@ -191,7 +216,23 @@ python -m pytest -q
 ```
 
 Tests use pytest temporary paths and do not write to application data files.
-The v1.2.0 development suite contains 385 passing tests.
+The v1.3.0 development suite contains 391 passing tests.
+
+Compile the source and verify whitespace:
+
+```bash
+python -m compileall -q src tests
+git diff --check
+```
+
+Build the source distribution and wheel:
+
+```bash
+python -m build
+```
+
+GitHub Actions runs these test, compile, whitespace, build, and installed-command
+checks on Python 3.10 and 3.13 for changes targeting `main`.
 
 ## JSON persistence
 
@@ -294,8 +335,8 @@ ID. If state is missing, it is recovered from the highest stored category ID.
 - Transfers and Excel import are not implemented
 - Transaction amounts still use `float`; exact `Decimal` money is deferred
 
-## Next planned version
+## Current development version
 
-v1.2.0 includes Excel transaction export and workbook summaries. CI, packaging,
-exact-money migration, visualization, currency, database, and GUI work remain
+v1.3.0 adds Python packaging, the `expense-tracker` console command, and CI.
+Exact-money migration, visualization, currency, database, and GUI work remain
 separate roadmap scope.

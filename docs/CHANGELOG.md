@@ -6,7 +6,30 @@ The format is based on **Keep a Changelog** and follows **Semantic Versioning**.
 
 ---
 
-## [1.2.0] - Unreleased
+## [1.3.0] - Unreleased
+
+### Added
+
+- Standards-based Python packaging through canonical `pyproject.toml` metadata
+- Installable `expense-tracker` console command delegating to `main.main`
+- GitHub Actions CI on Python 3.10 and 3.13
+- Source-distribution and wheel build verification
+- Focused packaging, import-safety, console-entry, and runtime-path tests
+
+### Changed
+
+- Separated runtime and development dependency declarations
+- Resolved default runtime JSON files from the current workspace so installed
+  code never writes into site-packages or a virtual environment
+
+### Documentation
+
+- Updated installation, architecture, release, roadmap, decision, analysis,
+  and verification guidance for the v1.3.0 development scope
+
+---
+
+## [1.2.0] - 2026-07-26
 
 ### Added
 

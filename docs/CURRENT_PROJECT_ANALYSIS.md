@@ -2,8 +2,8 @@
 
 ## Executive Summary
 
-Smart Expense Tracker v1.1.0 is released, and v1.2.0 Excel export is in
-development.
+Smart Expense Tracker v1.2.0 is released, and v1.3.0 packaging and continuous
+integration are in development.
 Account Management, Category Management, Date-based Transaction Management,
 and managed transaction references are implemented on top of JSON persistence.
 
@@ -23,7 +23,8 @@ search, and daily/range reports. Transaction mutations are locked, creation
 allocates display IDs atomically, and schema version 3 remains compatible with
 legacy transaction files.
 
-The current suite contains 385 passing tests. Transaction persistence
+The current suite contains 391 passing tests. Transaction persistence and
+packaging
 tests use temporary files and do not modify runtime JSON data.
 
 ## Current Architecture
@@ -150,8 +151,14 @@ larger datasets.
 
 ### Project Tooling
 
-Packaging, continuous integration, linting, static type checking, and coverage
-thresholds remain planned.
+`pyproject.toml` now defines a PEP 517 setuptools build over the existing flat
+modules, runtime dependencies, the `expense-tracker` entry point, and the
+development extra. GitHub Actions checks tests, compilation, changed-content
+whitespace, package builds, and a deterministic installed-command smoke test on
+Python 3.10 and 3.13.
+
+Linting, static type checking, coverage thresholds, package publication, and
+release automation remain deliberately deferred.
 
 ### Excel Reporting Adapter
 
@@ -166,11 +173,10 @@ charts, PDF output, and exact-money migration remain deferred.
 
 Keep future work scoped and incremental:
 
-1. Add continuous integration for pytest, compilation, and whitespace checks.
-2. Improve packaging and define a reproducible CLI entry point.
-3. Define exact-money representation and migration.
-4. Extend reporting formats only after the Excel output contract is stable.
-5. Introduce SQLite through another `TransactionRepository` implementation.
+1. Define exact-money representation and migration.
+2. Extend reporting formats only after the Excel output contract is stable.
+3. Introduce SQLite through another `TransactionRepository` implementation.
+4. Consider linting, typing, and coverage policy as separately scoped tooling.
 
 Multiple accounts, multiple currencies, transfers, dashboards, a GUI, and
 external interfaces remain roadmap items and are not implemented by the

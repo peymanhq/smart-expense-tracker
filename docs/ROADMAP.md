@@ -81,7 +81,7 @@ explicit unlinking, and cross-file database constraints remain future work.
 
 ## Status
 
-In development.
+Released 2026-07-26.
 
 ## Focus
 
@@ -99,6 +99,32 @@ application and persistence boundaries.
 Continuous integration, packaging, Excel import, PDF export, workbook charts,
 dashboards, multiple currencies, transfers, SQLite, Telegram integration, and
 a GUI remain separate future work.
+
+---
+
+# Smart Expense Tracker v1.3.0
+
+## Status
+
+In development.
+
+## Focus
+
+Add professional Python packaging and continuous integration without changing
+application features or persistence formats.
+
+## Implemented Scope
+
+- Canonical `pyproject.toml` project and dependency metadata
+- Standards-based source and wheel builds over the existing flat modules
+- Installed `expense-tracker` command delegating to `main.main`
+- Preserved `python3 src/main.py` development execution
+- GitHub Actions test/build matrix for Python 3.10 and 3.13
+- Packaging, entry-point, import-safety, and runtime-workspace tests
+- Documentation and isolated install/build verification
+
+Package publication, linting, type checking, coverage thresholds, release
+automation, and application features remain future work.
 
 ---
 
