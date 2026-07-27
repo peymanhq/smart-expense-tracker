@@ -63,6 +63,8 @@ main.py
 | `category_storage.py` | Validated, locked category-list and counter persistence |
 | `json_storage.py` | Shared atomic JSON writing |
 | `persistence_errors.py` | Backend-neutral persistence failure exposed to orchestration |
+| `sqlite_account_repository.py` | Inactive SQLite implementation of the Account repository protocol |
+| `sqlite_category_repository.py` | Inactive SQLite implementation of the Category repository protocol |
 | `sqlite_database.py` | Inactive SQLite path, connection, and transaction foundation |
 | `sqlite_schema.py` | Inactive SQLite schema version 1 initialization and validation |
 | `transaction.py` | Typed, passive Transaction data model |
@@ -404,10 +406,11 @@ functions into a service.
 
 ## SQLite Persistence Foundation
 
-SQLite infrastructure exists for future repository adapters but is not part of
-production composition. `build_json_application()` remains unchanged, JSON
-remains the only active backend, and neither `main.py` nor any service imports
-SQLite. There is no SQLite repository, backend selector, or JSON migration.
+SQLite infrastructure and Account/Category repository adapters exist but are
+not part of production composition. `build_json_application()` remains
+unchanged, JSON remains the only active backend, and neither `main.py` nor any
+service imports SQLite. There is no SQLite Transaction repository, backend
+selector, or JSON migration.
 
 ### Path and Connection Policy
 
@@ -481,9 +484,43 @@ Low-level SQLite failures are chained beneath backend-neutral `StorageError`
 exceptions. Unsupported versions use
 `UnsupportedSchemaVersionError`, which remains catchable as `StorageError`.
 
-The next persistence milestone may implement Account and Category repository
-adapters against these contracts. Production activation, Transaction repository
-implementation, backend selection, and JSON migration remain separate work.
+### Account and Category Repository Adapters
+
+`SQLiteAccountRepository` and `SQLiteCategoryRepository` implement the existing
+backend-neutral protocols and receive an explicit `SQLiteDatabase`. Constructing
+an adapter neither initializes a schema nor discovers a workspace; callers must
+initialize the supplied database through the existing schema foundation.
+
+Reads select explicit columns and return detached `Account` or `Category`
+models. Row mapping revalidates canonical UUIDs and display IDs, boolean state,
+Category type and NFC form, and the relationship between the visible name and
+its Python-produced NFC/casefold comparison key. Malformed persisted rows fail
+as `StorageError` rather than being skipped.
+
+Creation reads and conditionally increments the appropriate
+`display_id_counters` row and inserts the record inside one
+`BEGIN IMMEDIATE` transaction. Failed validation, uniqueness, locking, or
+insertion rolls back both changes, so a failed SQLite mutation does not consume
+an ID. Replacement preserves the stored UUID/display ID and, for Category, the
+stored transaction type. It compares the current row with the caller's expected
+model and uses a conditional update, preventing stale writers from silently
+overwriting a competing mutation.
+
+Account active-name uniqueness uses `name_key`; Category uses
+`(transaction_type, name_key)`. Inactive duplicates and cross-type Category
+names remain permitted. Repository prechecks produce the existing
+backend-neutral conflict errors, while database constraints remain the final
+defense against races.
+
+A shared parametrized contract suite runs the same creation, lookup, ordering,
+identity, replacement, uniqueness, inactive-reuse, counter, persistence, and
+service-filter behavior against both JSON and SQLite adapters. SQLite-specific
+tests additionally cover schema lifecycle, corrupted-row detection, competing
+instances, lock translation, rollback, and counter atomicity.
+
+The next persistence milestone may implement `SQLiteTransactionRepository`
+against the existing Transaction protocol. Production activation, backend
+selection, and JSON migration remain separate work.
 
 ---
 
