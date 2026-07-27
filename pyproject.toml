@@ -48,6 +48,7 @@ py-modules = [
     "persistence_errors",
     "report",
     "search",
+    "sqlite_database",
     "storage",
     "transaction",
     "transaction_factory",
