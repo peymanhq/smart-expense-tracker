@@ -49,6 +49,7 @@ py-modules = [
     "report",
     "search",
     "sqlite_database",
+    "sqlite_schema",
     "storage",
     "transaction",
     "transaction_factory",
