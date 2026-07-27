@@ -20,20 +20,17 @@ User
   ▼
 main.py
   │
-  ├── account_service.py
-  │     ├── account_repository.py
-  │     │     └── account_storage.py
-  │     └── account.py
-  ├── category_service.py
-  │     ├── category_repository.py
-  │     │     └── category_storage.py
-  │     └── category.py
-  ├── transaction_service.py
-  │     ├── transaction_repository.py
-  │     │     └── storage.py
-  │     ├── transaction_factory.py
-  │     ├── clock.py
-  │     └── date_policy.py
+  ├── application.py
+  │     ├── account_service.py
+  │     │     └── account_repository.py
+  │     ├── category_service.py
+  │     │     └── category_repository.py
+  │     ├── transaction_service.py
+  │     │     └── transaction_repository.py
+  │     └── excel_import_service.py
+  ├── account_storage.py
+  ├── category_storage.py
+  ├── storage.py
   ├── validators.py
   ├── report.py
   ├── excel_exporter.py
@@ -55,6 +52,7 @@ main.py
 | Module | Responsibility |
 |---------|----------------|
 | `main.py` | CLI interaction and workflow orchestration |
+| `application.py` | Typed construction of services and JSON repositories for one workspace |
 | `account.py` | Account data model |
 | `account_service.py` | Account validation and add, rename, deactivate, and activate rules |
 | `account_repository.py` | Account repository protocol and JSON implementation |
@@ -64,6 +62,7 @@ main.py
 | `category_repository.py` | Category repository protocol and JSON implementation |
 | `category_storage.py` | Validated, locked category-list and counter persistence |
 | `json_storage.py` | Shared atomic JSON writing |
+| `persistence_errors.py` | Backend-neutral persistence failure exposed to orchestration |
 | `transaction.py` | Typed, passive Transaction data model |
 | `transaction_factory.py` | Transaction creation |
 | `transaction_service.py` | Transaction workflows, date rules, and timestamp behavior |
@@ -83,6 +82,7 @@ main.py
 | `id_generator.py` | UUID creation and display-ID formatting, parsing, and legacy-state calculation |
 
 `main.py` owns terminal interaction and date-workspace session state.
+`application.py` owns dependency construction for the current JSON backend.
 Application services coordinate workflows without terminal or JSON access.
 The Account, Category, and Transaction repository protocols isolate the
 application layer from the current JSON implementations.
@@ -111,9 +111,10 @@ column widths, filters, frozen headers, and safe saving. It reuses
 persistence implementation. The exporter writes a same-directory temporary
 workbook and atomically replaces the final path only after a complete save.
 
-`main.py` also composes `TransactionService` with the public Account and
-Category UUID query functions. The service receives only lookup callables and
-does not know Account/Category file paths or storage formats.
+The application factory composes `TransactionService` with the public Account
+and Category UUID query functions. The service requires an explicitly supplied
+repository and receives only lookup callables; it does not know managed-record
+file paths or storage formats.
 
 ### Excel Import Data Flow
 
@@ -189,8 +190,11 @@ paths, compatibility loaders, mutation locks, atomic writes, and display-ID
 allocation. Creation allocates and persists under one lock. Replacement
 preserves UUID and display ID, checks that the service's source record is still
 current, and rechecks persisted uniqueness inside the protected mutation.
-`main.py` constructs these repositories and injects their services into
-transaction and Excel workflows.
+`build_json_application()` constructs these repositories and injects their
+services into transaction and Excel workflows. `main.py` consumes the returned
+frozen service aggregate and contains no repository construction details.
+Supplying a workspace root isolates all JSON data below that root; omitting it
+retains the existing current-working-directory-relative `data/` behavior.
 
 ---
 
@@ -388,6 +392,12 @@ transactions may be linked during update. Explicit unlinking and automatic
 legacy reconciliation remain future work. Separate JSON files and locks provide
 soft rather than database-level referential integrity.
 
+The older function-oriented transaction operations in `storage.py` remain
+supported compatibility surfaces and retain their tests. Production
+composition reaches transaction persistence exclusively through
+`TransactionRepository`; the application factory never injects those legacy
+functions into a service.
+
 ---
 
 ## Separation of Responsibilities
@@ -398,15 +408,17 @@ operations (`category_service.py`), data records (`account.py`, `category.py`,
 and `transaction.py`), transaction application workflows
 (`transaction_service.py`), entity-specific repository abstractions and JSON
 implementations (`account_repository.py`, `category_repository.py`, and
-`transaction_repository.py`), construction (`transaction_factory.py`),
+`transaction_repository.py`), application composition (`application.py`),
+domain construction (`transaction_factory.py`),
 lookup/search (`search.py`), reporting (`report.py`), formatting
 (`formatter.py`), and persistence infrastructure. Account and Category
 Management use separate persistence and connect to transactions only through
 service query APIs and optional UUID references.
 
 Replacing JSON later requires new implementations of the three repository
-protocols plus composition changes in `main.py`; managed-record business rules
-and CLI workflows do not require direct storage changes.
+protocols plus a new composition function beside `build_json_application()`;
+managed-record business rules, Excel services, and CLI workflows do not require
+direct storage changes.
 
 ---
 
@@ -642,13 +654,17 @@ The installed startup flow is:
 ```text
 expense-tracker
     -> main:main
-    -> existing CLI menus and dependency construction
+    -> existing CLI menus
+    -> build_json_application()
     -> application services and adapters
 ```
 
 `python3 src/main.py` reaches the same callable through the module's guarded
-runner. Importing `main` constructs dependencies but does not enter the input
-loop or read/write runtime files.
+runner. Importing `main` constructs one side-effect-free, immutable application
+service aggregate for compatibility with the existing handler surface; it does
+not enter the input loop or create/read/write runtime files. Explicit factory
+calls can construct isolated applications for other workspace roots without
+sharing mutable state.
 
 Default JSON paths and default Excel output are current-working-directory
 relative (`data/` and `exports/`). This makes the working directory the
