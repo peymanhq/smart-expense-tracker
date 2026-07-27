@@ -1,7 +1,6 @@
 """Business operations for account management."""
 
 from dataclasses import dataclass, replace
-from pathlib import Path
 from uuid import UUID
 
 from account import (
@@ -9,19 +8,13 @@ from account import (
     account_name_key,
     canonicalize_account_name,
 )
-from account_storage import (
-    ACCOUNT_STATE_FILE,
-    ACCOUNTS_FILE,
-    account_file_lock,
-    get_next_account_display_id,
-    load_accounts,
-    save_accounts,
+from account_repository import (
+    AccountRepository,
+    AccountRepositoryConflictError,
+    AccountRepositoryNotFoundError,
+    AccountRepositoryRecordChangedError,
 )
-from id_generator import (
-    generate_account_display_id,
-    generate_account_id,
-    parse_account_display_id,
-)
+from id_generator import generate_account_id, parse_account_display_id
 from validators import validate_required_text
 
 
@@ -42,215 +35,256 @@ def _has_duplicate_active_name(
 ) -> bool:
     normalized_name = account_name_key(name)
     return any(
-        account is not excluded_account
+        account != excluded_account
         and account.is_active
         and account_name_key(account.name) == normalized_name
         for account in accounts
     )
 
 
-def _find_account_by_display_id(
-    accounts: list[Account],
-    display_id: str,
-) -> Account | None:
-    if not isinstance(display_id, str):
-        return None
-    number = parse_account_display_id(display_id)
-    if number is None:
-        return None
-    normalized_display_id = generate_account_display_id(number)
-    return next(
-        (
-            account
-            for account in accounts
-            if account.display_id == normalized_display_id
-        ),
-        None,
-    )
+class AccountService:
+    """Apply Account business rules through an injected repository."""
 
+    def __init__(self, repository: AccountRepository) -> None:
+        self._repository = repository
 
-def list_accounts(
-    accounts_file: Path = ACCOUNTS_FILE,
-    *,
-    active_only: bool = False,
-) -> list[Account]:
-    """Return accounts in ascending numeric display-ID order."""
-    accounts = load_accounts(accounts_file)
-    if active_only:
-        accounts = [account for account in accounts if account.is_active]
-    return sorted(
-        accounts,
-        key=lambda account: parse_account_display_id(account.display_id) or 0,
-    )
-
-
-def get_account_by_id(
-    account_id: str,
-    accounts_file: Path = ACCOUNTS_FILE,
-) -> Account | None:
-    """Return an active or inactive account by canonical internal UUID."""
-    if not isinstance(account_id, str):
-        return None
-    try:
-        parsed_id = UUID(account_id)
-    except (ValueError, AttributeError):
-        return None
-    if str(parsed_id) != account_id:
-        return None
-    return next(
-        (
-            account
-            for account in list_accounts(accounts_file)
-            if account.id == account_id
-        ),
-        None,
-    )
-
-
-def get_account_by_display_id(
-    display_id: str,
-    accounts_file: Path = ACCOUNTS_FILE,
-) -> Account | None:
-    """Return an active or inactive account by normalized display ID."""
-    return _find_account_by_display_id(
-        list_accounts(accounts_file),
-        display_id,
-    )
-
-
-def add_account(
-    name: str,
-    accounts_file: Path = ACCOUNTS_FILE,
-    state_file: Path = ACCOUNT_STATE_FILE,
-) -> AccountOperationResult:
-    """Validate, create, and persist an account."""
-    try:
-        cleaned_name = canonicalize_account_name(
-            validate_required_text(name, "Account name")
+    def list_accounts(self, *, active_only: bool = False) -> list[Account]:
+        """Return Accounts in ascending numeric display-ID order."""
+        accounts = self._repository.list_all()
+        if active_only:
+            accounts = [account for account in accounts if account.is_active]
+        return sorted(
+            accounts,
+            key=lambda account: (
+                parse_account_display_id(account.display_id) or 0
+            ),
         )
-    except ValueError as error:
-        return AccountOperationResult(False, str(error))
 
-    with account_file_lock(accounts_file):
-        accounts = load_accounts(accounts_file)
-        if _has_duplicate_active_name(accounts, cleaned_name):
+    def get_account_by_id(self, account_id: str) -> Account | None:
+        """Return an active or inactive Account by canonical internal UUID."""
+        if not isinstance(account_id, str):
+            return None
+        try:
+            parsed_id = UUID(account_id)
+        except (ValueError, AttributeError):
+            return None
+        if str(parsed_id) != account_id:
+            return None
+        return self._repository.get_by_id(account_id)
+
+    def get_account_by_display_id(
+        self,
+        display_id: str,
+    ) -> Account | None:
+        """Return an Account by normalized display ID."""
+        if not isinstance(display_id, str):
+            return None
+        return self._repository.get_by_display_id(display_id)
+
+    def add_account(self, name: str) -> AccountOperationResult:
+        """Validate and persist a new Account."""
+        try:
+            cleaned_name = canonicalize_account_name(
+                validate_required_text(name, "Account name")
+            )
+        except ValueError as error:
+            return AccountOperationResult(False, str(error))
+
+        if _has_duplicate_active_name(
+            self._repository.list_all(),
+            cleaned_name,
+        ):
             return AccountOperationResult(
                 False,
                 "An active account with this name already exists.",
             )
-
-        account = Account(
-            id=generate_account_id(),
-            display_id=get_next_account_display_id(accounts_file, state_file),
-            name=cleaned_name,
+        try:
+            account = self._repository.create(
+                generate_account_id(),
+                cleaned_name,
+            )
+        except AccountRepositoryConflictError:
+            return AccountOperationResult(
+                False,
+                "An active account with this name already exists.",
+            )
+        return AccountOperationResult(
+            True,
+            "Account added successfully.",
+            account,
         )
-        accounts.append(account)
-        save_accounts(accounts, accounts_file, state_file)
-    return AccountOperationResult(True, "Account added successfully.", account)
+
+    def rename_account(
+        self,
+        display_id: str,
+        new_name: str,
+    ) -> AccountOperationResult:
+        """Rename the Account matching a normalized display ID."""
+        while True:
+            account = self.get_account_by_display_id(display_id)
+            if account is None:
+                return AccountOperationResult(False, "Account not found.")
+            try:
+                cleaned_name = canonicalize_account_name(
+                    validate_required_text(new_name, "Account name")
+                )
+            except ValueError as error:
+                return AccountOperationResult(False, str(error), account)
+
+            if account.is_active and _has_duplicate_active_name(
+                self._repository.list_all(),
+                cleaned_name,
+                excluded_account=account,
+            ):
+                return AccountOperationResult(
+                    False,
+                    "An active account with this name already exists.",
+                    account,
+                )
+            try:
+                renamed = self._repository.replace(
+                    account,
+                    replace(account, name=cleaned_name),
+                )
+            except AccountRepositoryRecordChangedError:
+                continue
+            except AccountRepositoryNotFoundError:
+                return AccountOperationResult(False, "Account not found.")
+            except AccountRepositoryConflictError:
+                return AccountOperationResult(
+                    False,
+                    "An active account with this name already exists.",
+                    account,
+                )
+            return AccountOperationResult(
+                True,
+                "Account renamed successfully.",
+                renamed,
+            )
+
+    def deactivate_account(
+        self,
+        display_id: str,
+    ) -> AccountOperationResult:
+        """Deactivate the Account matching a normalized display ID."""
+        while True:
+            account = self.get_account_by_display_id(display_id)
+            if account is None:
+                return AccountOperationResult(False, "Account not found.")
+            if not account.is_active:
+                return AccountOperationResult(
+                    False,
+                    "Account is already inactive.",
+                    account,
+                )
+            try:
+                deactivated = self._repository.replace(
+                    account,
+                    replace(account, is_active=False),
+                )
+            except AccountRepositoryRecordChangedError:
+                continue
+            except AccountRepositoryNotFoundError:
+                return AccountOperationResult(False, "Account not found.")
+            return AccountOperationResult(
+                True,
+                "Account deactivated successfully.",
+                deactivated,
+            )
+
+    def activate_account(
+        self,
+        display_id: str,
+    ) -> AccountOperationResult:
+        """Activate the Account matching a normalized display ID."""
+        while True:
+            account = self.get_account_by_display_id(display_id)
+            if account is None:
+                return AccountOperationResult(False, "Account not found.")
+            if account.is_active:
+                return AccountOperationResult(
+                    False,
+                    "Account is already active.",
+                    account,
+                )
+            if _has_duplicate_active_name(
+                self._repository.list_all(),
+                account.name,
+                excluded_account=account,
+            ):
+                return AccountOperationResult(
+                    False,
+                    "An active account with this name already exists.",
+                    account,
+                )
+            try:
+                activated = self._repository.replace(
+                    account,
+                    replace(account, is_active=True),
+                )
+            except AccountRepositoryRecordChangedError:
+                continue
+            except AccountRepositoryNotFoundError:
+                return AccountOperationResult(False, "Account not found.")
+            except AccountRepositoryConflictError:
+                return AccountOperationResult(
+                    False,
+                    "An active account with this name already exists.",
+                    account,
+                )
+            return AccountOperationResult(
+                True,
+                "Account activated successfully.",
+                activated,
+            )
+
+
+def list_accounts(
+    repository: AccountRepository,
+    *,
+    active_only: bool = False,
+) -> list[Account]:
+    return AccountService(repository).list_accounts(active_only=active_only)
+
+
+def get_account_by_id(
+    account_id: str,
+    repository: AccountRepository,
+) -> Account | None:
+    return AccountService(repository).get_account_by_id(account_id)
+
+
+def get_account_by_display_id(
+    display_id: str,
+    repository: AccountRepository,
+) -> Account | None:
+    return AccountService(repository).get_account_by_display_id(display_id)
+
+
+def add_account(
+    name: str,
+    repository: AccountRepository,
+) -> AccountOperationResult:
+    return AccountService(repository).add_account(name)
 
 
 def rename_account(
     display_id: str,
     new_name: str,
-    accounts_file: Path = ACCOUNTS_FILE,
-    state_file: Path = ACCOUNT_STATE_FILE,
+    repository: AccountRepository,
 ) -> AccountOperationResult:
-    """Rename the account matching a normalized display ID."""
-    with account_file_lock(accounts_file):
-        accounts = load_accounts(accounts_file)
-        account = _find_account_by_display_id(accounts, display_id)
-        if account is None:
-            return AccountOperationResult(False, "Account not found.")
-
-        try:
-            cleaned_name = canonicalize_account_name(
-                validate_required_text(new_name, "Account name")
-            )
-        except ValueError as error:
-            return AccountOperationResult(False, str(error), account)
-
-        if account.is_active and _has_duplicate_active_name(
-            accounts,
-            cleaned_name,
-            excluded_account=account,
-        ):
-            return AccountOperationResult(
-                False,
-                "An active account with this name already exists.",
-                account,
-            )
-
-        renamed_account = replace(account, name=cleaned_name)
-        accounts[accounts.index(account)] = renamed_account
-        save_accounts(accounts, accounts_file, state_file)
-        return AccountOperationResult(
-            True,
-            "Account renamed successfully.",
-            renamed_account,
-        )
+    return AccountService(repository).rename_account(display_id, new_name)
 
 
 def deactivate_account(
     display_id: str,
-    accounts_file: Path = ACCOUNTS_FILE,
-    state_file: Path = ACCOUNT_STATE_FILE,
+    repository: AccountRepository,
 ) -> AccountOperationResult:
-    """Deactivate the account matching a normalized display ID."""
-    with account_file_lock(accounts_file):
-        accounts = load_accounts(accounts_file)
-        account = _find_account_by_display_id(accounts, display_id)
-        if account is None:
-            return AccountOperationResult(False, "Account not found.")
-        if not account.is_active:
-            return AccountOperationResult(
-                False,
-                "Account is already inactive.",
-                account,
-            )
-
-        deactivated_account = replace(account, is_active=False)
-        accounts[accounts.index(account)] = deactivated_account
-        save_accounts(accounts, accounts_file, state_file)
-        return AccountOperationResult(
-            True,
-            "Account deactivated successfully.",
-            deactivated_account,
-        )
+    return AccountService(repository).deactivate_account(display_id)
 
 
 def activate_account(
     display_id: str,
-    accounts_file: Path = ACCOUNTS_FILE,
-    state_file: Path = ACCOUNT_STATE_FILE,
+    repository: AccountRepository,
 ) -> AccountOperationResult:
-    """Activate the account matching a normalized display ID."""
-    with account_file_lock(accounts_file):
-        accounts = load_accounts(accounts_file)
-        account = _find_account_by_display_id(accounts, display_id)
-        if account is None:
-            return AccountOperationResult(False, "Account not found.")
-        if account.is_active:
-            return AccountOperationResult(
-                False,
-                "Account is already active.",
-                account,
-            )
-        if _has_duplicate_active_name(
-            accounts,
-            account.name,
-            excluded_account=account,
-        ):
-            return AccountOperationResult(
-                False,
-                "An active account with this name already exists.",
-                account,
-            )
-
-        activated_account = replace(account, is_active=True)
-        accounts[accounts.index(account)] = activated_account
-        save_accounts(accounts, accounts_file, state_file)
-        return AccountOperationResult(
-            True,
-            "Account activated successfully.",
-            activated_account,
-        )
+    return AccountService(repository).activate_account(display_id)

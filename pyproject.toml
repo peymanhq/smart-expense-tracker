@@ -26,9 +26,11 @@ expense-tracker = "main:main"
 package-dir = {"" = "src"}
 py-modules = [
     "account",
+    "account_repository",
     "account_service",
     "account_storage",
     "category",
+    "category_repository",
     "category_service",
     "category_storage",
     "clock",

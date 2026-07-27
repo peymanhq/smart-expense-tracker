@@ -7,27 +7,11 @@ from pathlib import Path
 from typing import TypeVar
 
 from account import Account
-from account_service import (
-    activate_account,
-    add_account,
-    deactivate_account,
-    get_account_by_id,
-    get_account_by_display_id,
-    list_accounts,
-    rename_account,
-)
-from account_storage import ACCOUNTS_FILE, load_accounts
+from account_repository import JsonAccountRepository
+from account_service import AccountService
 from category import Category
-from category_service import (
-    activate_category,
-    add_category,
-    deactivate_category,
-    get_category_by_id,
-    get_category_by_display_id,
-    list_categories,
-    rename_category,
-)
-from category_storage import CATEGORIES_FILE, CATEGORY_STATE_FILE
+from category_repository import JsonCategoryRepository
+from category_service import CategoryService
 from clock import TodayProvider, local_today
 from date_policy import ValidatedDateQuery
 from excel_exporter import (
@@ -66,51 +50,49 @@ from transaction_service import (
 from validators import validate_transaction_date, validate_transaction_type
 
 TRANSACTION_TODAY_PROVIDER: TodayProvider = local_today
+ACCOUNT_REPOSITORY = JsonAccountRepository()
+CATEGORY_REPOSITORY = JsonCategoryRepository()
+ACCOUNT_SERVICE = AccountService(ACCOUNT_REPOSITORY)
+CATEGORY_SERVICE = CategoryService(CATEGORY_REPOSITORY)
+
+# Bound application operations keep the CLI handlers simple and independently
+# monkeypatchable while repository construction remains in this composition root.
+activate_account = ACCOUNT_SERVICE.activate_account
+add_account = ACCOUNT_SERVICE.add_account
+deactivate_account = ACCOUNT_SERVICE.deactivate_account
+get_account_by_display_id = ACCOUNT_SERVICE.get_account_by_display_id
+get_account_by_id = ACCOUNT_SERVICE.get_account_by_id
+list_accounts = ACCOUNT_SERVICE.list_accounts
+rename_account = ACCOUNT_SERVICE.rename_account
+activate_category = CATEGORY_SERVICE.activate_category
+add_category = CATEGORY_SERVICE.add_category
+deactivate_category = CATEGORY_SERVICE.deactivate_category
+get_category_by_display_id = CATEGORY_SERVICE.get_category_by_display_id
+get_category_by_id = CATEGORY_SERVICE.get_category_by_id
+list_categories = CATEGORY_SERVICE.list_categories
+rename_category = CATEGORY_SERVICE.rename_category
+
 TRANSACTION_REPOSITORY = JsonTransactionRepository()
 TRANSACTION_SERVICE = TransactionService(
     TRANSACTION_REPOSITORY,
     today_provider=TRANSACTION_TODAY_PROVIDER,
-    account_lookup=partial(
-        get_account_by_id,
-        accounts_file=ACCOUNTS_FILE,
-    ),
-    category_lookup=partial(
-        get_category_by_id,
-        categories_file=CATEGORIES_FILE,
-        state_file=CATEGORY_STATE_FILE,
-    ),
+    account_lookup=get_account_by_id,
+    category_lookup=get_category_by_id,
 )
 TRANSACTION_ACTIVE_ACCOUNT_LIST = partial(
     list_accounts,
-    accounts_file=ACCOUNTS_FILE,
     active_only=True,
 )
-TRANSACTION_ACCOUNT_DISPLAY_LOOKUP = partial(
-    get_account_by_display_id,
-    accounts_file=ACCOUNTS_FILE,
-)
+TRANSACTION_ACCOUNT_DISPLAY_LOOKUP = get_account_by_display_id
 TRANSACTION_ACTIVE_CATEGORY_LIST = partial(
     list_categories,
-    categories_file=CATEGORIES_FILE,
-    state_file=CATEGORY_STATE_FILE,
     active_only=True,
 )
-TRANSACTION_CATEGORY_DISPLAY_LOOKUP = partial(
-    get_category_by_display_id,
-    categories_file=CATEGORIES_FILE,
-    state_file=CATEGORY_STATE_FILE,
-)
+TRANSACTION_CATEGORY_DISPLAY_LOOKUP = get_category_by_display_id
 EXCEL_IMPORT_SERVICE = ExcelImportService(
     TRANSACTION_SERVICE,
-    account_list=partial(
-        list_accounts,
-        accounts_file=ACCOUNTS_FILE,
-    ),
-    category_list=partial(
-        list_categories,
-        categories_file=CATEGORIES_FILE,
-        state_file=CATEGORY_STATE_FILE,
-    ),
+    account_list=list_accounts,
+    category_list=list_categories,
 )
 
 ManagedRecord = TypeVar("ManagedRecord", Account, Category)
@@ -1056,7 +1038,7 @@ def handle_add_account() -> None:
 
 
 def handle_view_accounts() -> None:
-    accounts = load_accounts()
+    accounts = list_accounts()
     if not accounts:
         print("No accounts found.")
         return
