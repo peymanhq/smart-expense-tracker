@@ -63,6 +63,8 @@ main.py
 | `category_storage.py` | Validated, locked category-list and counter persistence |
 | `json_storage.py` | Shared atomic JSON writing |
 | `persistence_errors.py` | Backend-neutral persistence failure exposed to orchestration |
+| `sqlite_database.py` | Inactive SQLite path, connection, and transaction foundation |
+| `sqlite_schema.py` | Inactive SQLite schema version 1 initialization and validation |
 | `transaction.py` | Typed, passive Transaction data model |
 | `transaction_factory.py` | Transaction creation |
 | `transaction_service.py` | Transaction workflows, date rules, and timestamp behavior |
@@ -397,6 +399,91 @@ supported compatibility surfaces and retain their tests. Production
 composition reaches transaction persistence exclusively through
 `TransactionRepository`; the application factory never injects those legacy
 functions into a service.
+
+---
+
+## SQLite Persistence Foundation
+
+SQLite infrastructure exists for future repository adapters but is not part of
+production composition. `build_json_application()` remains unchanged, JSON
+remains the only active backend, and neither `main.py` nor any service imports
+SQLite. There is no SQLite repository, backend selector, or JSON migration.
+
+### Path and Connection Policy
+
+The future workspace database path is:
+
+```text
+<workspace root>/data/smart_expense_tracker.sqlite3
+```
+
+When no root is supplied, the path remains the unresolved relative path
+`data/smart_expense_tracker.sqlite3`, preserving current-working-directory
+workspace behavior. Calculating a path and importing the SQLite modules create
+no directory or file. A short-lived connection creates the parent directory for
+a real file-backed database.
+
+Every connection uses Python's built-in `sqlite3`, returns `sqlite3.Row`
+objects, enables `PRAGMA foreign_keys = ON`, and configures a five-second
+`busy_timeout`. Journal mode and synchronous mode retain SQLite defaults;
+the foundation does not introduce WAL side files or unneeded tuning. There is
+no ORM, external database dependency, global connection, or import-time access.
+
+Writes use an explicit `BEGIN IMMEDIATE` context. Successful work commits once;
+application exceptions and SQLite failures roll back the complete transaction,
+and the connection is always closed. This boundary will allow a future
+repository to allocate a display ID and insert its record atomically.
+
+### Schema Version 1
+
+Initialization creates all version 1 objects in one transaction and writes the
+version only as part of that transaction. Repeated initialization validates
+and preserves a valid version 1 database. Older, newer, malformed, partial, or
+constraint-incomplete schemas are rejected without rebuilding, downgrading, or
+deleting data. Upgrade migrations are deferred.
+
+Version 1 contains:
+
+- `schema_metadata`: one singleton schema-version row.
+- `display_id_counters`: independent next values for Account, Category, and
+  Transaction display IDs. CHECK constraints, a primary key, and triggers
+  prevent invalid keys, non-positive values, deletion, and counter regression.
+- `accounts`: UUID identity, `A-####` display ID, name, Unicode comparison key,
+  and active state.
+- `categories`: UUID identity, `C-####` display ID, name, Unicode comparison
+  key, income/expense type, and active state.
+- `transactions`: UUID identity, `T-####` display ID, income/expense type,
+  amount, Account/Category name snapshots, nullable managed UUID references,
+  description, financial date, and nullable creation/update timestamps.
+
+Account active-name uniqueness uses a partial unique index over a
+Python-produced NFC/casefold comparison key. Category uniqueness uses the same
+approach scoped by transaction type. Inactive duplicates remain permitted.
+SQLite's built-in `lower()` is not a Unicode casefold replacement, so future
+repositories are responsible for producing these keys with the existing domain
+normalizers.
+
+Nullable Transaction references support current legacy records. When present,
+foreign keys use restrictive update/delete behavior; cascading deletion is not
+introduced. Indexes cover display IDs, active managed-record lookup, Category
+type, Transaction date/type, and both managed UUID references.
+
+Amounts use SQLite `REAL` to preserve the application's current Python
+`float` behavior. Moving to decimal text or integer minor units requires a
+separate domain-level decision. Transaction dates use ISO `YYYY-MM-DD` text,
+and timestamps use canonical ISO-8601 UTC text. Full calendar, timestamp,
+and normalization validation remains in the validation/service layer and future
+repository conversion code rather than brittle SQL expressions. Version 1 does
+not claim SQL-level finite-number validation; tightening non-finite float
+behavior requires a separate application decision.
+
+Low-level SQLite failures are chained beneath backend-neutral `StorageError`
+exceptions. Unsupported versions use
+`UnsupportedSchemaVersionError`, which remains catchable as `StorageError`.
+
+The next persistence milestone may implement Account and Category repository
+adapters against these contracts. Production activation, Transaction repository
+implementation, backend selection, and JSON migration remain separate work.
 
 ---
 
