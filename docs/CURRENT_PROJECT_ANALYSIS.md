@@ -2,10 +2,11 @@
 
 ## Executive Summary
 
-Smart Expense Tracker v1.3.0 is released. Defensive Excel transaction import
-and a guided import template are in development for the next release.
-Account Management, Category Management, Date-based Transaction Management,
-and managed transaction references are implemented on top of JSON persistence.
+Smart Expense Tracker v1.4.0 is released. It includes defensive Excel
+transaction import, a guided workspace-aware import template, duplicate
+protection, financial preview, and atomic bulk persistence. Account Management,
+Category Management, Date-based Transaction Management, and managed transaction
+references remain implemented on top of JSON persistence.
 
 The transaction path now has explicit boundaries:
 
@@ -35,7 +36,7 @@ search, and daily/range reports. Transaction mutations are locked, creation
 allocates display IDs atomically, and schema version 3 remains compatible with
 legacy transaction files.
 
-The current suite contains 467 passing tests. Transaction persistence,
+The current suite contains 471 passing tests. Transaction persistence,
 packaging, and Excel tests use temporary files and do not modify runtime JSON
 data.
 
@@ -200,8 +201,14 @@ Valid previews persist once through the generic transaction bulk-create
 boundary. Identity/timestamp columns are ignored.
 
 `excel_template.py` generates Instructions, an empty formatted entry sheet, and
-active Reference Data with named-range dropdowns. Shared workbook constants and
-atomic output behavior live in `excel_workbook.py`.
+active Reference Data with named-range dropdowns. Category validation selects
+the stable Income or Expense range from each row's Type. Shared workbook
+constants and atomic output behavior live in `excel_workbook.py`.
+
+Template generation and `ExcelImportService` remain callable without terminal
+input or output. `main.py` is the current CLI adapter, so a future Telegram
+adapter can reuse these boundaries without owning workbook or persistence
+logic.
 
 Charts, PDF output, and exact-money migration remain deferred.
 

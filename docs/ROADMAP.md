@@ -128,16 +128,16 @@ automation, and application features remain future work.
 
 ---
 
-# Next Release — Excel Transaction Import
+# Smart Expense Tracker v1.4.0
 
 ## Status
 
-In development.
+Released 2026-07-27.
 
 ## Focus
 
-Add a professional new-transaction Excel input workflow while preserving the
-CLI → service → repository → atomic JSON architecture.
+Deliver a professional new-transaction Excel input workflow while preserving
+the CLI → service → repository → atomic JSON architecture.
 
 ## Implemented Scope
 

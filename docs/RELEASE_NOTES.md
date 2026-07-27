@@ -1,34 +1,52 @@
-# Smart Expense Tracker — Next Release
+# Smart Expense Tracker v1.4.0
 
-In development; not yet released or published.
+Released 2026-07-27.
 
-The next release adds a safe Excel transaction input path without making Excel
-a persistence layer.
+v1.4.0 adds a safe Excel transaction input path without making Excel a
+persistence layer.
 
 ## User-visible Improvements
 
 - Generate a workspace-aware import template with Instructions, Transactions,
-  and active Account/Category Reference Data. Category choices are filtered
-  per row by the selected Income or Expense Type.
-- Validate `.xlsx` rows and see every issue with its physical Excel row number.
+  and active Account/Category Reference Data.
+- Use dependent Category dropdowns: Income rows show active Income Categories,
+  while Expense rows show active Expense Categories.
+- Import transactions from `.xlsx` files with a required `Transactions`
+  worksheet and required headers.
+- Resolve Account and Category names to active managed records and enforce
+  Category/type compatibility.
+- Validate every row and see each issue with its physical Excel row number.
 - Preview transaction counts, income, expense, and net balance impact before
   confirmation.
-- Import valid new transactions through one all-or-nothing mutation.
+- Import all valid rows through one all-or-nothing mutation, or import none.
 - Receive explicit conflicts for stored duplicates and earlier matching
   workbook rows.
+- Generate new UUIDs, timestamps, and monotonic display IDs in workbook row
+  order rather than trusting imported identity.
 
 The required worksheet is `Transactions`, with `Date`, `Type`, `Amount`,
 `Description`, `Account`, and `Category` columns. Additional exported metadata
 columns are ignored. Imported UUIDs, Display IDs, and timestamps are never
 trusted; the application generates new identity and metadata.
 
-Only `.xlsx` is supported. The importer does not update existing transactions,
-partially import rows, create Accounts or Categories, restore identifiers, or
-support `.xls`, `.xlsm`, CSV, transfers, or multiple currencies.
+Template generation and Excel import remain reusable application services
+without CLI input/output coupling, allowing a future adapter such as Telegram
+to invoke the same boundaries.
+
+## Confirmed Limitations
+
+- No `.xls` or `.xlsm` import
+- No CSV import
+- No partial import
+- No transaction updates through Excel
+- No UUID, display-ID, or timestamp restoration
+- No automatic Account or Category creation
+- No transfers
+- No multiple currencies
 
 ## Development Verification
 
-The development suite contains 471 passing tests. Coverage includes workbook
+The v1.4.0 release suite contains 471 passing tests. Coverage includes workbook
 structure and types, active managed-reference resolution, duplicate keys,
 late-conflict protection, monotonic ordered IDs, one-lock atomic persistence,
 save-failure preservation, Type-dependent template dropdowns, CLI confirmation,
@@ -165,6 +183,6 @@ may be linked to active managed records during update.
 ## Later Versions
 
 v1.2.0 subsequently delivered Excel transaction, financial, and category
-summaries. v1.3.0 delivered packaging and CI. Excel import is now in
-development; PDF output, charts, and exact-money migration remain separate
-work.
+summaries. v1.3.0 delivered packaging and CI. v1.4.0 delivered Excel import
+and its guided template; PDF output, charts, and exact-money migration remain
+separate work.

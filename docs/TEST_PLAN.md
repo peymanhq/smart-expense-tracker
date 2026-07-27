@@ -169,12 +169,12 @@ verifies imports from outside the repository.
 
 ---
 
-# Excel Import Development Result
+# v1.4.0 Release Result
 
-The Excel import development suite completes successfully:
+The v1.4.0 release suite completes successfully:
 
 ```text
-467 passed
+471 passed
 ```
 
 The additional coverage verifies:
@@ -256,8 +256,7 @@ Linting, static typing, and coverage policy remain planned. Future interfaces
 such as a GUI or Telegram bot will require end-to-end tests. SQLite, Decimal
 money, PDF, charts, and other integration-specific tests remain future work.
 Excel export coverage is included in v1.2.0; packaging and CI coverage is
-included in v1.3.0; Excel import and template coverage is included in the next
-release.
+included in v1.3.0; Excel import and template coverage is included in v1.4.0.
 
 ---
 

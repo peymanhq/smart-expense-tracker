@@ -8,6 +8,12 @@ The format is based on **Keep a Changelog** and follows **Semantic Versioning**.
 
 ## [Unreleased]
 
+No changes yet.
+
+---
+
+## [1.4.0] - 2026-07-27
+
 ### Added
 
 - Defensive `.xlsx` transaction parsing with exact worksheet/header contracts,

@@ -6,12 +6,11 @@ workflows without requiring a database or external service.
 
 ## Version status
 
-**Smart Expense Tracker v1.3.0** is the current released version. It includes
+**Smart Expense Tracker v1.4.0** is the current released version. It includes
 Account Management, Category Management, Date-based Transaction Management,
 managed Account/Category selection, Excel reporting, standards-based
-packaging, an installed CLI command, and continuous integration. Excel
-transaction import and its guided workbook template are in development for the
-next release.
+packaging, an installed CLI command, continuous integration, defensive Excel
+transaction import, and a guided workspace-aware import template.
 
 ## Features
 
@@ -261,7 +260,7 @@ python -m pytest -q
 ```
 
 Tests use pytest temporary paths and do not write to application data files.
-The Excel import development suite contains 467 passing tests.
+The v1.4.0 release suite contains 471 passing tests.
 
 Compile the source and verify whitespace:
 
@@ -380,9 +379,10 @@ ID. If state is missing, it is recovered from the highest stored category ID.
 - Transfers are not implemented
 - Transaction amounts still use `float`; exact `Decimal` money is deferred
 
-## Current development version
+## Current release
 
-The next release adds defensive Excel transaction import, duplicate-safe
-all-or-nothing bulk persistence, and a guided workspace-aware template.
-Exact-money migration, visualization, currency, database, and GUI work remain
-separate roadmap scope.
+v1.4.0 adds defensive `.xlsx` transaction import, duplicate-safe
+all-or-nothing bulk persistence, financial preview, new generated identity,
+and a guided workspace-aware template with Type-dependent Category dropdowns.
+Exact-money migration, visualization, currency, database, Telegram, and GUI
+work remain separate roadmap scope.

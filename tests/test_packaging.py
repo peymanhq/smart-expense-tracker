@@ -30,7 +30,7 @@ def test_project_metadata_declares_release_and_dependencies() -> None:
     project = load_pyproject()["project"]
 
     assert project["name"] == "smart-expense-tracker"
-    assert project["version"] == "1.3.0"
+    assert project["version"] == "1.4.0"
     assert project["requires-python"] == ">=3.10"
     assert project["dependencies"] == ["openpyxl>=3.1,<4.0"]
     assert project["optional-dependencies"]["dev"] == [
