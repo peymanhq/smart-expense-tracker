@@ -10,7 +10,7 @@ The long-term objective is to build a maintainable, testable, and extensible fin
 
 ---
 
-## Current Architecture (v1.4.0)
+## Current Architecture (v1.5.0 development)
 
 The current application follows this structure:
 
@@ -21,10 +21,12 @@ User
 main.py
   │
   ├── account_service.py
-  │     ├── account_storage.py
+  │     ├── account_repository.py
+  │     │     └── account_storage.py
   │     └── account.py
   ├── category_service.py
-  │     ├── category_storage.py
+  │     ├── category_repository.py
+  │     │     └── category_storage.py
   │     └── category.py
   ├── transaction_service.py
   │     ├── transaction_repository.py
@@ -55,9 +57,11 @@ main.py
 | `main.py` | CLI interaction and workflow orchestration |
 | `account.py` | Account data model |
 | `account_service.py` | Account validation and add, rename, deactivate, and activate rules |
+| `account_repository.py` | Account repository protocol and JSON implementation |
 | `account_storage.py` | Validated, locked account persistence and legacy migration |
 | `category.py` | Passive standalone Category data model |
 | `category_service.py` | Category validation, listing, and mutation rules |
+| `category_repository.py` | Category repository protocol and JSON implementation |
 | `category_storage.py` | Validated, locked category-list and counter persistence |
 | `json_storage.py` | Shared atomic JSON writing |
 | `transaction.py` | Typed, passive Transaction data model |
@@ -79,9 +83,9 @@ main.py
 | `id_generator.py` | UUID creation and display-ID formatting, parsing, and legacy-state calculation |
 
 `main.py` owns terminal interaction and date-workspace session state.
-`TransactionService` coordinates transaction workflows without terminal or
-JSON access. `TransactionRepository` isolates the application layer from the
-current JSON implementation.
+Application services coordinate workflows without terminal or JSON access.
+The Account, Category, and Transaction repository protocols isolate the
+application layer from the current JSON implementations.
 
 ### Excel Export Data Flow
 
@@ -168,23 +172,25 @@ services without terminal input or output. `main.py` is the current CLI
 adapter; a future messaging adapter can invoke the same boundaries without
 moving workbook parsing or JSON persistence into the adapter.
 
-Account workflows use a focused application-service module so their business
-rules remain independent of CLI input and output.
+`AccountService` and `CategoryService` own managed-record validation and
+business rules. They receive repository protocols and do not accept file
+paths, acquire file locks, read JSON, or manage counter files. Small
+function-oriented wrappers remain available but likewise require repository
+objects.
 
-Category workflows use the same focused service boundary and remain
-independent of transaction persistence details.
+The services expose public managed-record queries. Account queries list all or
+only active records and resolve canonical UUIDs or normalized display IDs.
+Category queries add active-state and transaction-type filters while retaining
+the established type-then-display-ID ordering. UUID and display-ID lookup
+includes inactive records so historical callers can still resolve them.
 
-The function-oriented account and category services also expose public,
-read-only managed-record queries. Account queries list all or only active
-records and resolve canonical UUIDs or normalized display IDs. Category queries
-add active-state and transaction-type filters while retaining the established
-type-then-display-ID ordering. UUID and display-ID lookup includes inactive
-records so historical callers can still resolve them; active-only lists are the
-boundary used by transaction selection workflows. These queries return new
-collections, propagate storage errors, and do not modify persisted data.
-`main.py` binds the active-list and normalized display-ID query functions to
-runtime paths for transaction selection. Display IDs remain user-facing keys;
-the selected domain UUIDs cross into `TransactionService`.
+`JsonAccountRepository` and `JsonCategoryRepository` own the existing JSON
+paths, compatibility loaders, mutation locks, atomic writes, and display-ID
+allocation. Creation allocates and persists under one lock. Replacement
+preserves UUID and display ID, checks that the service's source record is still
+current, and rechecks persisted uniqueness inside the protected mutation.
+`main.py` constructs these repositories and injects their services into
+transaction and Excel workflows.
 
 ---
 
@@ -251,7 +257,8 @@ before aggregation. Neither module consults the clock.
 ### Account Management
 
 `account_service.py` validates account names, rejects duplicate active names,
-and coordinates add, rename, deactivate, and activate operations. Mutations
+and coordinates add, rename, deactivate, and activate operations through
+`AccountRepository`. Mutations
 return an explicit result containing success state, a user-facing message, and
 the affected account when applicable. Display-ID lookup normalizes whitespace,
 letter case, and numeric padding. Account names use NFC Unicode normalization
@@ -271,7 +278,8 @@ active or inactive records, with UUID lookup requiring canonical UUID text.
 
 `category_service.py` trims and NFC-normalizes names, canonicalizes transaction
 types to `income` or `expense`, and returns explicit operation results for add,
-rename, activate, and deactivate behavior. Active-name uniqueness is scoped by
+rename, activate, and deactivate behavior through `CategoryRepository`.
+Active-name uniqueness is scoped by
 transaction type and compared case-insensitively. Inactive names may be reused;
 activation is rejected if it would conflict with an active category of the
 same type. Listing is deterministic: transaction type, then numeric display ID.
@@ -388,15 +396,17 @@ The current version separates terminal interaction (`main.py`), validation
 (`validators.py`), account operations (`account_service.py`), category
 operations (`category_service.py`), data records (`account.py`, `category.py`,
 and `transaction.py`), transaction application workflows
-(`transaction_service.py`), repository abstraction and JSON implementation
-(`transaction_repository.py`), construction (`transaction_factory.py`),
+(`transaction_service.py`), entity-specific repository abstractions and JSON
+implementations (`account_repository.py`, `category_repository.py`, and
+`transaction_repository.py`), construction (`transaction_factory.py`),
 lookup/search (`search.py`), reporting (`report.py`), formatting
 (`formatter.py`), and persistence infrastructure. Account and Category
 Management use separate persistence and connect to transactions only through
 service query APIs and optional UUID references.
 
-Replacing JSON later requires another `TransactionRepository` implementation;
-the transaction service and CLI workflow do not need direct storage changes.
+Replacing JSON later requires new implementations of the three repository
+protocols plus composition changes in `main.py`; managed-record business rules
+and CLI workflows do not require direct storage changes.
 
 ---
 
