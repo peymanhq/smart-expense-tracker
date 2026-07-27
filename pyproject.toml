@@ -44,6 +44,7 @@ py-modules = [
     "id_generator",
     "json_storage",
     "main",
+    "persistence_errors",
     "report",
     "search",
     "storage",
