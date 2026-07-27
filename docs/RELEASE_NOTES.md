@@ -8,7 +8,8 @@ a persistence layer.
 ## User-visible Improvements
 
 - Generate a workspace-aware import template with Instructions, Transactions,
-  and active Account/Category Reference Data.
+  and active Account/Category Reference Data. Category choices are filtered
+  per row by the selected Income or Expense Type.
 - Validate `.xlsx` rows and see every issue with its physical Excel row number.
 - Preview transaction counts, income, expense, and net balance impact before
   confirmation.
@@ -27,10 +28,10 @@ support `.xls`, `.xlsm`, CSV, transfers, or multiple currencies.
 
 ## Development Verification
 
-The development suite contains 467 passing tests. Coverage includes workbook
+The development suite contains 471 passing tests. Coverage includes workbook
 structure and types, active managed-reference resolution, duplicate keys,
 late-conflict protection, monotonic ordered IDs, one-lock atomic persistence,
-save-failure preservation, template content and dropdowns, CLI confirmation,
+save-failure preservation, Type-dependent template dropdowns, CLI confirmation,
 packaging, and all earlier behavior.
 
 ---

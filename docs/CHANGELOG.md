@@ -30,6 +30,8 @@ The format is based on **Keep a Changelog** and follows **Semantic Versioning**.
 
 - Shared the canonical Excel transaction headers, styles, destination
   validation, and atomic workbook saver between export and template generation
+- Filtered each template row's Category dropdown by its selected transaction
+  Type while retaining import-time compatibility validation
 - Canonicalized new transaction export workbooks to the `Date` header while
   retaining import compatibility with the earlier `Transaction Date` header
 - Extended `TransactionService` and `TransactionRepository` with one generic

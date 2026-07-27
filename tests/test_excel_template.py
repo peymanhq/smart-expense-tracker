@@ -7,8 +7,10 @@ import pytest
 
 from account import Account
 from category import Category
+import excel_template
 from excel_template import (
     INSTRUCTIONS,
+    TEMPLATE_ENTRY_LAST_ROW,
     TEMPLATE_WORKSHEETS,
     generate_excel_import_template,
 )
@@ -106,7 +108,15 @@ def test_template_creates_expected_professional_workbook(tmp_path) -> None:
     }
     assert validations['"Income,Expense"'] == "B2:B1001"
     assert validations["=ActiveAccounts"] == "E2:E1001"
-    assert validations["=ActiveCategories"] == "F2:F1001"
+    assert validations['=INDIRECT($B2&"Categories")'] == "F2"
+    assert validations['=INDIRECT($B3&"Categories")'] == "F3"
+    assert validations['=INDIRECT($B1001&"Categories")'] == "F1001"
+    category_validations = [
+        validation
+        for validation in transactions.data_validations.dataValidation
+        if validation.formula1.startswith("=INDIRECT(")
+    ]
+    assert len(category_validations) == TEMPLATE_ENTRY_LAST_ROW - 1
     workbook.close()
 
 
@@ -133,7 +143,9 @@ def test_instructions_include_every_required_warning(tmp_path) -> None:
         "greater than zero",
         "active account",
         "active category",
-        "match the transaction type",
+        "filtered by the selected type",
+        "select category again",
+        "blank dropdown",
         "completely empty rows",
         "duplicate",
         "all-or-nothing",
@@ -168,8 +180,6 @@ def test_reference_data_contains_only_active_names_and_no_internal_ids(
     assert reference["C2"].value == "Salary & Bonus"
     assert reference["E1"].value == "Active Expense Categories"
     assert reference["E2"].value == "Food / Dining"
-    assert reference["G2"].value == "Salary & Bonus"
-    assert reference["G3"].value == "Food / Dining"
     values = workbook_values(workbook)
     assert "Closed / Archive" not in values
     assert "Inactive" not in values
@@ -179,9 +189,9 @@ def test_reference_data_contains_only_active_names_and_no_internal_ids(
 
     names = {name.name: name.attr_text for name in workbook.defined_names.values()}
     assert names["ActiveAccounts"] == "'Reference Data'!$A$2:$A$2"
-    assert names["ActiveIncomeCategories"] == "'Reference Data'!$C$2:$C$2"
-    assert names["ActiveExpenseCategories"] == "'Reference Data'!$E$2:$E$2"
-    assert names["ActiveCategories"] == "'Reference Data'!$G$2:$G$3"
+    assert names["IncomeCategories"] == "'Reference Data'!$C$2:$C$2"
+    assert names["ExpenseCategories"] == "'Reference Data'!$E$2:$E$2"
+    assert "ActiveCategories" not in names
     workbook.close()
 
 
@@ -195,9 +205,97 @@ def test_empty_reference_lists_have_valid_blank_named_ranges(tmp_path) -> None:
     names = {name.name: name.attr_text for name in workbook.defined_names.values()}
 
     assert names["ActiveAccounts"] == "'Reference Data'!$A$2:$A$2"
-    assert names["ActiveCategories"] == "'Reference Data'!$G$2:$G$2"
+    assert names["IncomeCategories"] == "'Reference Data'!$C$2:$C$2"
+    assert names["ExpenseCategories"] == "'Reference Data'!$E$2:$E$2"
     assert workbook["Reference Data"]["A2"].value is None
-    assert workbook["Reference Data"]["G2"].value is None
+    assert workbook["Reference Data"]["C2"].value is None
+    assert workbook["Reference Data"]["E2"].value is None
+    workbook.close()
+
+
+@pytest.mark.parametrize(
+    ("categories", "income_value", "expense_value"),
+    [
+        (
+            [
+                Category(
+                    INCOME_CATEGORY_ID,
+                    "C-0001",
+                    "درآمد ویژه",
+                    "income",
+                )
+            ],
+            "درآمد ویژه",
+            None,
+        ),
+        (
+            [
+                Category(
+                    EXPENSE_CATEGORY_ID,
+                    "C-0002",
+                    "خوراک / نان",
+                    "expense",
+                )
+            ],
+            None,
+            "خوراک / نان",
+        ),
+    ],
+)
+def test_one_empty_category_group_keeps_both_named_ranges_valid(
+    tmp_path,
+    categories,
+    income_value,
+    expense_value,
+) -> None:
+    destination = generate_excel_import_template(
+        [],
+        categories,
+        tmp_path / "one-empty-group.xlsx",
+    )
+    workbook = load_workbook(destination)
+    names = {name.name: name.attr_text for name in workbook.defined_names.values()}
+
+    assert names["IncomeCategories"] == "'Reference Data'!$C$2:$C$2"
+    assert names["ExpenseCategories"] == "'Reference Data'!$E$2:$E$2"
+    assert workbook["Reference Data"]["C2"].value == income_value
+    assert workbook["Reference Data"]["E2"].value == expense_value
+    workbook.close()
+
+
+def test_category_validation_uses_actual_type_and_category_header_columns(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    reordered_headers = (
+        "Date",
+        "Category",
+        "Amount",
+        "Description",
+        "Account",
+        "Type",
+    )
+    monkeypatch.setattr(
+        excel_template,
+        "REQUIRED_TRANSACTION_HEADERS",
+        reordered_headers,
+    )
+    destination = generate_excel_import_template(
+        *records(),
+        tmp_path / "reordered.xlsx",
+    )
+    workbook = load_workbook(destination)
+    transactions = workbook["Transactions"]
+    validations = {
+        validation.formula1: str(validation.sqref)
+        for validation in transactions.data_validations.dataValidation
+    }
+
+    assert tuple(cell.value for cell in transactions[1]) == reordered_headers
+    assert validations['"Income,Expense"'] == "F2:F1001"
+    assert validations["=ActiveAccounts"] == "E2:E1001"
+    assert validations['=INDIRECT($F2&"Categories")'] == "B2"
+    assert validations['=INDIRECT($F1001&"Categories")'] == "B1001"
     workbook.close()
 
 

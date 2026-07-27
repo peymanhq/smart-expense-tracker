@@ -202,7 +202,9 @@ The additional coverage verifies:
   late-conflict rejection, and original-file preservation after failure
 - Reimporting the same workbook without silent duplication
 - Exact template worksheets, instructions, headers, formatting, named ranges,
-  dropdowns, active-only reference data, empty lists, and UUID exclusion
+  Type-dependent row dropdowns, active-only reference data, one/both empty
+  category groups, Unicode values, actual header positions, stale
+  Category/type rejection, and UUID exclusion
 - Template destination normalization, overwrite protection, save-failure
   cleanup, and workspace-dated CLI default
 - Import/template menu reachability, complete issue output, no confirmation for

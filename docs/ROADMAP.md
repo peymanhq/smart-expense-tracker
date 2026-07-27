@@ -151,7 +151,8 @@ CLI → service → repository → atomic JSON architecture.
 - One-lock, one-replacement ordered bulk transaction persistence
 - New UUID, display-ID, and timestamp generation
 - Instructions/Transactions/Reference Data import template
-- Named-range Account/Category dropdowns and workspace-aware output
+- Named-range Account dropdowns, Type-dependent active Category dropdowns, and
+  workspace-aware output
 - CLI, parser, service, repository, workbook, and failure-atomicity tests
 
 The scope excludes `.xls`, `.xlsm`, CSV import, updates through Excel,

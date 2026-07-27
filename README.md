@@ -193,9 +193,10 @@ Choose **Generate Excel import template** to create
 `exports/smart_expense_tracker_import_template_YYYY-MM-DD.xlsx`. The workbook
 contains visible **Instructions**, **Transactions**, and **Reference Data**
 worksheets. The entry sheet has dropdowns for `Income`/`Expense`, active
-Account names, and all active Category names; the importer remains
-authoritative for Category/type compatibility. Reference Data never exposes
-internal UUIDs.
+Account names, and active Categories filtered by each row's selected Type.
+Changing Type does not clear an earlier Category selection, so select the
+Category again; the importer remains authoritative and rejects stale,
+incompatible values. Reference Data never exposes internal UUIDs.
 
 Choose **Import transactions from Excel** and provide an `.xlsx` file with a
 worksheet named exactly `Transactions`. Its required headers are:

@@ -5,12 +5,13 @@ from datetime import date, datetime, timezone
 import json
 from pathlib import Path
 
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 import pytest
 
 from account import Account
 from category import Category
 from excel_exporter import export_transactions_to_excel
+from excel_template import generate_excel_import_template
 from excel_import_service import (
     ExcelImportPersistenceConflictError,
     ExcelImportPersistenceValidationError,
@@ -170,6 +171,37 @@ def test_active_names_resolve_case_insensitively_to_internal_uuids(
     assert preview.total_income == 100
     assert preview.total_expense == 10
     assert preview.net_balance_impact == 90
+
+
+def test_stale_template_category_after_type_change_is_rejected(
+    tmp_path,
+    import_service,
+    accounts,
+    categories,
+) -> None:
+    source = generate_excel_import_template(
+        accounts,
+        categories,
+        tmp_path / "stale-category.xlsx",
+    )
+    workbook = load_workbook(source)
+    worksheet = workbook["Transactions"]
+    worksheet.append(
+        row(
+            transaction_type="Income",
+            category="Food",
+            description="Type changed after selecting Category",
+        )
+    )
+    workbook.save(source)
+    workbook.close()
+
+    preview = import_service.analyze(source)
+
+    assert not preview.is_valid
+    assert preview.candidates == ()
+    assert preview.issues[0].row_number == 2
+    assert preview.issues[0].code == "category_type_mismatch"
 
 
 @pytest.mark.parametrize(

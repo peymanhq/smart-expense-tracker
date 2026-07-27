@@ -5,6 +5,7 @@ from pathlib import Path
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.workbook.defined_name import DefinedName
 
@@ -63,8 +64,10 @@ INSTRUCTIONS = (
     ),
     (
         "Category",
-        "Use the name of an active Category from Reference Data. The Category "
-        "must match the transaction Type.",
+        "Choose an active Category filtered by the selected Type. If Type "
+        "changes later, select Category again; the importer rejects stale "
+        "incompatible values. A Type with no active Categories has a blank "
+        "dropdown.",
     ),
     (
         "Rows",
@@ -154,12 +157,10 @@ def _write_reference_data(
         for category in categories
         if category.is_active and category.transaction_type == "expense"
     ]
-    all_categories = [*income_categories, *expense_categories]
     headings = (
         ("A1", "Active Accounts"),
         ("C1", "Active Income Categories"),
         ("E1", "Active Expense Categories"),
-        ("G1", "All Active Categories"),
     )
     for coordinate, heading in headings:
         worksheet[coordinate] = heading
@@ -174,18 +175,16 @@ def _write_reference_data(
         worksheet.cell(row=row, column=3, value=name)
     for row, name in enumerate(expense_categories, start=2):
         worksheet.cell(row=row, column=5, value=name)
-    for row, name in enumerate(all_categories, start=2):
-        worksheet.cell(row=row, column=7, value=name)
 
-    for column in ("A", "C", "E", "G"):
+    for column in ("A", "C", "E"):
         worksheet.column_dimensions[column].width = 30
-    for column in ("B", "D", "F"):
+    for column in ("B", "D"):
         worksheet.column_dimensions[column].width = 3
     worksheet.freeze_panes = "A2"
     worksheet.sheet_view.showGridLines = False
     _fit_print_width(
         worksheet,
-        f"A1:G{max(worksheet.max_row, 2)}",
+        f"A1:E{max(worksheet.max_row, 2)}",
     )
 
     _add_named_range(
@@ -196,38 +195,52 @@ def _write_reference_data(
     )
     _add_named_range(
         workbook,
-        "ActiveIncomeCategories",
+        "IncomeCategories",
         "C",
         len(income_categories),
     )
     _add_named_range(
         workbook,
-        "ActiveExpenseCategories",
+        "ExpenseCategories",
         "E",
         len(expense_categories),
-    )
-    _add_named_range(
-        workbook,
-        "ActiveCategories",
-        "G",
-        len(all_categories),
     )
 
 
 def _write_transactions(workbook: Workbook) -> None:
     worksheet = workbook.create_sheet("Transactions")
     worksheet.append(REQUIRED_TRANSACTION_HEADERS)
+    header_columns = {
+        header: get_column_letter(index)
+        for index, header in enumerate(
+            REQUIRED_TRANSACTION_HEADERS,
+            start=1,
+        )
+    }
+    last_column = get_column_letter(len(REQUIRED_TRANSACTION_HEADERS))
+    type_column = header_columns["Type"]
+    account_column = header_columns["Account"]
+    category_column = header_columns["Category"]
     style_header_row(worksheet)
     worksheet.freeze_panes = "A2"
-    worksheet.auto_filter.ref = "A1:F1"
-    widths = (16, 14, 16, 44, 28, 28)
-    for index, width in enumerate(widths, start=1):
-        worksheet.column_dimensions[
-            worksheet.cell(row=1, column=index).column_letter
-        ].width = width
-    worksheet.column_dimensions["A"].number_format = DATE_FORMAT
-    worksheet.column_dimensions["C"].number_format = AMOUNT_FORMAT
-    _fit_print_width(worksheet, "A1:F2")
+    worksheet.auto_filter.ref = f"A1:{last_column}1"
+    widths = {
+        "Date": 16,
+        "Type": 14,
+        "Amount": 16,
+        "Description": 44,
+        "Account": 28,
+        "Category": 28,
+    }
+    for header, column in header_columns.items():
+        worksheet.column_dimensions[column].width = widths[header]
+    worksheet.column_dimensions[
+        header_columns["Date"]
+    ].number_format = DATE_FORMAT
+    worksheet.column_dimensions[
+        header_columns["Amount"]
+    ].number_format = AMOUNT_FORMAT
+    _fit_print_width(worksheet, f"A1:{last_column}2")
 
     type_validation = DataValidation(
         type="list",
@@ -239,15 +252,15 @@ def _write_transactions(workbook: Workbook) -> None:
         formula1="=ActiveAccounts",
         allow_blank=False,
     )
-    category_validation = DataValidation(
-        type="list",
-        formula1="=ActiveCategories",
-        allow_blank=False,
-    )
     for validation, cell_range in (
-        (type_validation, f"B2:B{TEMPLATE_ENTRY_LAST_ROW}"),
-        (account_validation, f"E2:E{TEMPLATE_ENTRY_LAST_ROW}"),
-        (category_validation, f"F2:F{TEMPLATE_ENTRY_LAST_ROW}"),
+        (
+            type_validation,
+            f"{type_column}2:{type_column}{TEMPLATE_ENTRY_LAST_ROW}",
+        ),
+        (
+            account_validation,
+            f"{account_column}2:{account_column}{TEMPLATE_ENTRY_LAST_ROW}",
+        ),
     ):
         validation.error = "Choose a supported value from the list."
         validation.errorTitle = "Invalid template value"
@@ -257,6 +270,27 @@ def _write_transactions(workbook: Workbook) -> None:
         validation.showInputMessage = True
         worksheet.add_data_validation(validation)
         validation.add(cell_range)
+
+    for row_number in range(2, TEMPLATE_ENTRY_LAST_ROW + 1):
+        category_validation = DataValidation(
+            type="list",
+            formula1=(
+                f'=INDIRECT(${type_column}{row_number}&"Categories")'
+            ),
+            allow_blank=False,
+        )
+        category_validation.error = (
+            "Choose a Category compatible with this row's Type."
+        )
+        category_validation.errorTitle = "Invalid template value"
+        category_validation.prompt = (
+            "Select Type first, then choose a compatible Category."
+        )
+        category_validation.promptTitle = "Smart Expense Tracker"
+        category_validation.showErrorMessage = True
+        category_validation.showInputMessage = True
+        worksheet.add_data_validation(category_validation)
+        category_validation.add(f"{category_column}{row_number}")
 
 
 def build_excel_import_template(

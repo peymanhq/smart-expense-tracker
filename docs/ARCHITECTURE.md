@@ -156,10 +156,17 @@ CLI destination + overwrite confirmation
 ```
 
 Named worksheet ranges back Account and Category dropdowns, avoiding Excel's
-direct-list length and special-character limitations. The template never
-contains UUIDs or real transaction rows. The Category dropdown includes all
-active Categories; import validation remains authoritative for type
-compatibility.
+direct-list length and special-character limitations. Stable
+`IncomeCategories` and `ExpenseCategories` ranges contain active values only;
+each entry row derives its Category list from that row's Type cell. Empty
+category groups still resolve to a valid blank range. The template never
+contains UUIDs or real transaction rows, and import validation remains
+authoritative if a user changes Type without reselecting Category.
+
+Template generation and import analysis/persistence are callable application
+services without terminal input or output. `main.py` is the current CLI
+adapter; a future messaging adapter can invoke the same boundaries without
+moving workbook parsing or JSON persistence into the adapter.
 
 Account workflows use a focused application-service module so their business
 rules remain independent of CLI input and output.
