@@ -6,7 +6,43 @@ The format is based on **Keep a Changelog** and follows **Semantic Versioning**.
 
 ---
 
-## [1.3.0] - Unreleased
+## [Unreleased]
+
+### Added
+
+- Defensive `.xlsx` transaction parsing with exact worksheet/header contracts,
+  physical Excel row numbers, complete row issue reporting, and cached-formula
+  value handling
+- Active Account/Category name resolution with existing Unicode and
+  case-insensitive comparison rules and Category/type compatibility
+- Deterministic duplicate protection against stored transactions, resolvable
+  legacy snapshots, and earlier workbook rows
+- Import previews with counts, income, expense, and net balance impact
+- Ordered atomic bulk transaction creation with locked monotonic display-ID
+  allocation and late-conflict rechecking
+- Guided Excel import templates with Instructions, Transactions, and Reference
+  Data worksheets, safe named-range dropdowns, and active managed values
+- Main-menu Excel import and template-generation workflows
+- Focused parser, resolution, duplicate, identity, failure-atomicity, template,
+  and CLI coverage
+
+### Changed
+
+- Shared the canonical Excel transaction headers, styles, destination
+  validation, and atomic workbook saver between export and template generation
+- Canonicalized new transaction export workbooks to the `Date` header while
+  retaining import compatibility with the earlier `Transaction Date` header
+- Extended `TransactionService` and `TransactionRepository` with one generic
+  validated bulk-create workflow rather than adding Excel-specific JSON access
+
+### Documentation
+
+- Documented the workbook contract, template workflow, duplicate key,
+  all-or-nothing persistence, architecture, limitations, and verification
+
+---
+
+## [1.3.0] - 2026-07-26
 
 ### Added
 
@@ -25,7 +61,7 @@ The format is based on **Keep a Changelog** and follows **Semantic Versioning**.
 ### Documentation
 
 - Updated installation, architecture, release, roadmap, decision, analysis,
-  and verification guidance for the v1.3.0 development scope
+  and verification guidance for the v1.3.0 release scope
 
 ---
 

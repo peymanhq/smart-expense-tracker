@@ -106,7 +106,7 @@ a GUI remain separate future work.
 
 ## Status
 
-In development.
+Released 2026-07-26.
 
 ## Focus
 
@@ -125,6 +125,38 @@ application features or persistence formats.
 
 Package publication, linting, type checking, coverage thresholds, release
 automation, and application features remain future work.
+
+---
+
+# Next Release — Excel Transaction Import
+
+## Status
+
+In development.
+
+## Focus
+
+Add a professional new-transaction Excel input workflow while preserving the
+CLI → service → repository → atomic JSON architecture.
+
+## Implemented Scope
+
+- Strict `.xlsx` and `Transactions` worksheet contract
+- Canonical required headers with legacy export-date header compatibility
+- Complete row validation with physical Excel row numbers
+- Active Account and Category name resolution
+- Category/transaction-type compatibility
+- Stored and within-workbook duplicate conflicts
+- Counts and financial-impact preview before confirmation
+- One-lock, one-replacement ordered bulk transaction persistence
+- New UUID, display-ID, and timestamp generation
+- Instructions/Transactions/Reference Data import template
+- Named-range Account/Category dropdowns and workspace-aware output
+- CLI, parser, service, repository, workbook, and failure-atomicity tests
+
+The scope excludes `.xls`, `.xlsm`, CSV import, updates through Excel,
+identifier/timestamp restoration, partial import, managed-record creation,
+transfers, and multiple currencies.
 
 ---
 
@@ -203,11 +235,12 @@ Excel integration.
 
 ## Planned Work
 
-- Excel import
-- Additional Excel export formats and templates
+- Additional Excel export formats
 - Dashboard generation
-- Templates
-- Batch transaction import
+- Additional reporting templates
+
+The safe `.xlsx` new-transaction import and its entry template were delivered
+ahead of this broader reporting milestone.
 
 ---
 

@@ -2,8 +2,8 @@
 
 ## Executive Summary
 
-Smart Expense Tracker v1.2.0 is released, and v1.3.0 packaging and continuous
-integration are in development.
+Smart Expense Tracker v1.3.0 is released. Defensive Excel transaction import
+and a guided import template are in development for the next release.
 Account Management, Category Management, Date-based Transaction Management,
 and managed transaction references are implemented on top of JSON persistence.
 
@@ -17,15 +17,27 @@ main.py
     -> shared atomic JSON writer
 ```
 
+Excel import reaches the same transaction path after a separate workbook
+analysis boundary:
+
+```text
+main.py
+    -> ExcelImportService
+    -> TransactionService.add_transactions
+    -> TransactionRepository.create_many
+    -> JsonTransactionRepository / storage.py
+    -> one locked atomic JSON replacement
+```
+
 The completed date feature adds a selected-date workspace, historical entry,
 date-scoped CRUD, explicit date movement, populated-date browsing, exact/range
 search, and daily/range reports. Transaction mutations are locked, creation
 allocates display IDs atomically, and schema version 3 remains compatible with
 legacy transaction files.
 
-The current suite contains 391 passing tests. Transaction persistence and
-packaging
-tests use temporary files and do not modify runtime JSON data.
+The current suite contains 467 passing tests. Transaction persistence,
+packaging, and Excel tests use temporary files and do not modify runtime JSON
+data.
 
 ## Current Architecture
 
@@ -87,6 +99,13 @@ under one lock:
 Display IDs are global across all dates and are never reused after deletion.
 Duplicate internal IDs, duplicate display IDs, and counters behind stored IDs
 fail before a replacement.
+
+Bulk creation validates every ordered request before mutation. Under one lock,
+the repository rechecks deterministic managed duplicate keys, allocates
+consecutive display IDs, advances metadata once, validates the complete
+candidate document, and performs one atomic replacement. This preserves
+all-or-nothing behavior even when persistence fails or a matching concurrent
+insert occurs after preview.
 
 ## Compatibility
 
@@ -166,15 +185,32 @@ release automation remain deliberately deferred.
 from the CLI/service boundary. It creates Transactions, Summary, and Category
 Summary worksheets, reuses pure report calculations, and saves through
 same-directory temporary output plus atomic replacement. It never reads JSON,
-depends on a concrete repository, or mutates application state. Excel import,
-charts, PDF output, and exact-money migration remain deferred.
+depends on a concrete repository, or mutates application state.
+
+### Excel Import and Template Adapters
+
+`excel_import.py` enforces the `.xlsx`, Transactions worksheet, and normalized
+header contracts in read-only calculated-value mode. It returns parsed rows
+and physical-row issues without domain persistence entities.
+
+`ExcelImportService` resolves active names, enforces Category/type
+compatibility, applies the existing date policy, and detects duplicates using
+date, type, amount, normalized description, Account UUID, and Category UUID.
+Valid previews persist once through the generic transaction bulk-create
+boundary. Identity/timestamp columns are ignored.
+
+`excel_template.py` generates Instructions, an empty formatted entry sheet, and
+active Reference Data with named-range dropdowns. Shared workbook constants and
+atomic output behavior live in `excel_workbook.py`.
+
+Charts, PDF output, and exact-money migration remain deferred.
 
 ## Recommended Next Work
 
 Keep future work scoped and incremental:
 
 1. Define exact-money representation and migration.
-2. Extend reporting formats only after the Excel output contract is stable.
+2. Extend reporting formats after the import/export header contract stabilizes.
 3. Introduce SQLite through another `TransactionRepository` implementation.
 4. Consider linting, typing, and coverage policy as separately scoped tooling.
 

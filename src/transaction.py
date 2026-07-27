@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import date, datetime
+import unicodedata
 
 from validators import validate_transaction_date, validate_utc_datetime
 
@@ -32,3 +33,27 @@ class Transaction:
             validate_utc_datetime(self.created_at, "created_at")
         if self.updated_at is not None:
             validate_utc_datetime(self.updated_at, "updated_at")
+
+
+TransactionComparisonKey = tuple[date, str, float, str, str, str]
+
+
+def normalized_transaction_description(description: str) -> str:
+    """Return the stable comparison form used by duplicate detection."""
+    return unicodedata.normalize("NFC", description.strip()).casefold()
+
+
+def transaction_comparison_key(
+    transaction: Transaction,
+) -> TransactionComparisonKey | None:
+    """Return the import duplicate key for fully managed transactions."""
+    if transaction.account_id is None or transaction.category_id is None:
+        return None
+    return (
+        transaction.transaction_date,
+        transaction.type,
+        transaction.amount,
+        normalized_transaction_description(transaction.description),
+        transaction.account_id,
+        transaction.category_id,
+    )

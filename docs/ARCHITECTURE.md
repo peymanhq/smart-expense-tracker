@@ -10,7 +10,7 @@ The long-term objective is to build a maintainable, testable, and extensible fin
 
 ---
 
-## Current Architecture (v1.3.0 development)
+## Current Architecture (post-v1.3.0 development)
 
 The current application follows this structure:
 
@@ -35,6 +35,10 @@ main.py
   ├── validators.py
   ├── report.py
   ├── excel_exporter.py
+  ├── excel_workbook.py
+  ├── excel_import.py
+  ├── excel_import_service.py
+  ├── excel_template.py
   ├── search.py
   ├── formatter.py
   ├── transaction.py
@@ -66,6 +70,10 @@ main.py
 | `storage.py` | Versioned schema handling, locking, validation, and JSON persistence |
 | `report.py` | Pure financial aggregation over selected transactions |
 | `excel_exporter.py` | In-memory workbook construction, Excel formatting, and atomic `.xlsx` saving |
+| `excel_workbook.py` | Shared Excel header/style contract, destination validation, and atomic workbook saving |
+| `excel_import.py` | Read-only `.xlsx` parsing and row-level structural/type issues |
+| `excel_import_service.py` | Managed-name resolution, duplicate analysis, preview totals, and import orchestration |
+| `excel_template.py` | Instructions, entry, and active-reference workbook generation |
 | `search.py` | Pure date/text filtering, ordering, and display-ID lookup |
 | `formatter.py` | Terminal formatting |
 | `id_generator.py` | UUID creation and display-ID formatting, parsing, and legacy-state calculation |
@@ -102,6 +110,56 @@ workbook and atomically replaces the final path only after a complete save.
 `main.py` also composes `TransactionService` with the public Account and
 Category UUID query functions. The service receives only lookup callables and
 does not know Account/Category file paths or storage formats.
+
+### Excel Import Data Flow
+
+```text
+CLI (`main.py`)
+  -> `ExcelImportService.analyze(path)`
+     -> `excel_import.py` read-only/cached-value parser
+     -> Account/Category read-only lists and established name keys
+     -> `TransactionService` date policy and current transaction query
+     -> complete issues or immutable preview
+  -> explicit user confirmation
+  -> `ExcelImportService.persist(preview)`
+     -> one `TransactionService.add_transactions(...)` call
+     -> one `TransactionRepository.create_many(...)` mutation
+     -> one lock + one validated atomic JSON replacement
+```
+
+The parser owns only the external workbook contract. It does not create
+`Transaction` entities or read/write JSON. Parsed rows retain physical Excel
+row numbers and ignore unrelated identity/timestamp columns.
+
+`ExcelImportService` resolves trimmed Account and Category names with the
+existing NFC/case-folded comparison keys. It requires active records and a
+Category compatible with the normalized transaction type. It computes the
+same deterministic duplicate key for stored and candidate transactions:
+financial date, type, float amount, normalized description, Account UUID, and
+Category UUID. Resolvable legacy name snapshots participate in the stored
+duplicate check.
+
+The service returns every validation and conflict issue before persistence.
+Any issue makes the preview non-persistable. Confirmation delegates ordered
+requests once to `TransactionService`; the repository rechecks managed
+duplicate keys under the mutation lock so a concurrent insert after preview
+cannot produce a silent duplicate.
+
+### Excel Import Template Data Flow
+
+```text
+CLI destination + overwrite confirmation
+  -> active Account/Category query results
+  -> `excel_template.py`
+  -> shared `excel_workbook.py` atomic output helper
+  -> Instructions / Transactions / Reference Data workbook
+```
+
+Named worksheet ranges back Account and Category dropdowns, avoiding Excel's
+direct-list length and special-character limitations. The template never
+contains UUIDs or real transaction rows. The Category dropdown includes all
+active Categories; import validation remains authoritative for type
+compatibility.
 
 Account workflows use a focused application-service module so their business
 rules remain independent of CLI input and output.
@@ -143,6 +201,14 @@ the selected domain UUIDs cross into `TransactionService`.
 
 The CLI does not allocate display IDs, access transaction JSON, or generate
 timestamps.
+
+Atomic bulk creation follows the same boundary. `TransactionService` validates
+every ordered request, re-resolves active managed UUIDs, creates fresh UUIDs
+and timestamps, and submits the complete candidate list once. The JSON
+repository loads the latest document under one lock, rejects stored or batch
+duplicate keys, allocates consecutive display IDs from persisted metadata,
+validates the complete candidate document, and atomically replaces the file.
+No earlier row can remain persisted after a later-row or write failure.
 
 ### Search, Update, and Deletion
 
@@ -264,9 +330,10 @@ Missing and empty files represent an empty dataset. Malformed JSON, invalid
 top-level structures, invalid metadata, and malformed transaction entries
 raise a controlled `StorageError`.
 
-Complete create, replace, delete, and retained compatibility mutations use a
+Complete create, bulk-create, replace, delete, and retained compatibility mutations use a
 re-entrant cross-process lock. Duplicate internal IDs, duplicate display IDs,
-and a counter behind existing IDs are rejected before a write. Writes use a
+import comparison keys during bulk creation, and a counter behind existing IDs
+are rejected before a write. Writes use a
 temporary file in the destination directory. Storage serializes
 and flushes the full document, calls `os.fsync`, and then uses `os.replace` for
 an atomic destination replacement. A failed write removes its temporary file
@@ -476,9 +543,8 @@ Every input source should use the same validation and business logic.
 
 Future integrations include:
 
-- Excel Import
-- Excel Export
 - Excel Dashboard
+- Additional Excel reporting formats
 - Telegram Bot
 - PDF Reports
 - Desktop GUI

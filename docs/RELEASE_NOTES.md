@@ -1,6 +1,43 @@
-# Smart Expense Tracker v1.3.0
+# Smart Expense Tracker — Next Release
 
 In development; not yet released or published.
+
+The next release adds a safe Excel transaction input path without making Excel
+a persistence layer.
+
+## User-visible Improvements
+
+- Generate a workspace-aware import template with Instructions, Transactions,
+  and active Account/Category Reference Data.
+- Validate `.xlsx` rows and see every issue with its physical Excel row number.
+- Preview transaction counts, income, expense, and net balance impact before
+  confirmation.
+- Import valid new transactions through one all-or-nothing mutation.
+- Receive explicit conflicts for stored duplicates and earlier matching
+  workbook rows.
+
+The required worksheet is `Transactions`, with `Date`, `Type`, `Amount`,
+`Description`, `Account`, and `Category` columns. Additional exported metadata
+columns are ignored. Imported UUIDs, Display IDs, and timestamps are never
+trusted; the application generates new identity and metadata.
+
+Only `.xlsx` is supported. The importer does not update existing transactions,
+partially import rows, create Accounts or Categories, restore identifiers, or
+support `.xls`, `.xlsm`, CSV, transfers, or multiple currencies.
+
+## Development Verification
+
+The development suite contains 467 passing tests. Coverage includes workbook
+structure and types, active managed-reference resolution, duplicate keys,
+late-conflict protection, monotonic ordered IDs, one-lock atomic persistence,
+save-failure preservation, template content and dropdowns, CLI confirmation,
+packaging, and all earlier behavior.
+
+---
+
+# Smart Expense Tracker v1.3.0
+
+Released 2026-07-26.
 
 v1.3.0 adds professional delivery infrastructure while preserving every
 financial workflow and persistence schema from v1.2.0.
@@ -23,7 +60,7 @@ or financial feature is part of this version.
 
 ## Development Verification
 
-The v1.3.0 development suite contains 391 passing tests. CI and local release
+The v1.3.0 release suite contains 391 passing tests. CI and local release
 checks cover Python compilation, changed-content whitespace checks, source and
 wheel builds, editable installation, and deterministic installed-command
 startup and exit.
@@ -121,11 +158,12 @@ may be linked to active managed records during update.
 - Explicit managed-reference unlinking and automatic legacy reconciliation are
   not implemented.
 - Amounts still use `float`.
-- No transfers, multi-currency support, Excel/PDF export, charts, GUI, or
-  SQLite persistence.
+- No transfers, multi-currency support, PDF export, charts, GUI, or SQLite
+  persistence.
 
 ## Later Versions
 
 v1.2.0 subsequently delivered Excel transaction, financial, and category
-summaries. v1.3.0 is now in development for packaging and CI. Excel import, PDF
-output, charts, and exact-money migration remain separate work.
+summaries. v1.3.0 delivered packaging and CI. Excel import is now in
+development; PDF output, charts, and exact-money migration remain separate
+work.

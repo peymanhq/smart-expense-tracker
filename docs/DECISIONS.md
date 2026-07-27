@@ -797,3 +797,75 @@ smoke verification on Python 3.10 and 3.13.
 - `requirements.txt` remains only a compatibility shortcut to `.[dev]`.
 - Linting, typing, coverage policy, publication, release automation, and a
   future namespaced-package migration remain deferred.
+
+---
+
+# ADR-026
+
+## Title
+
+Import Excel transactions through analysis, preview, and one atomic bulk
+mutation.
+
+## Status
+
+Accepted
+
+## Context
+
+Excel import must reuse transaction validation, managed Account/Category
+rules, UUID/timestamp creation, monotonic display IDs, repository validation,
+locking, and atomic JSON replacement. Parsing rows directly in `main.py` or
+saving them through repeated public single-create calls would either duplicate
+business logic or permit a partial import.
+
+Repeated imports must also detect deterministic semantic duplicates without
+trusting workbook identity metadata.
+
+## Decision
+
+Use four focused responsibilities:
+
+1. `excel_import.py` opens `.xlsx` files read-only with calculated values and
+   external-link loading disabled. It enforces the worksheet/header contract,
+   normalizes supported scalar fields, retains physical Excel row numbers, and
+   returns typed parsed rows plus issues.
+2. `excel_import_service.py` resolves names through the established
+   Account/Category comparison keys, requires active compatible records,
+   applies the transaction date policy, detects stored and in-workbook
+   duplicates, and produces an immutable preview.
+3. `TransactionService.add_transactions()` validates every resolved request,
+   generates fresh UUIDs/timestamps, and delegates the complete ordered list
+   once.
+4. `TransactionRepository.create_many()` rechecks managed duplicate keys,
+   allocates consecutive display IDs from persisted metadata, validates the
+   full candidate document, and performs one locked atomic replacement.
+
+The comparison key is financial date, normalized transaction type, existing
+float amount, NFC/case-folded trimmed description, resolved Account UUID, and
+resolved Category UUID. Stored legacy snapshots participate when both names
+can be resolved to active compatible managed records. Duplicate issues block
+the complete import; there is no overwrite, update, or partial mode.
+
+`excel_template.py` creates visible Instructions, Transactions, and Reference
+Data worksheets from detached active records. Named worksheet ranges back
+managed-name dropdowns. `excel_workbook.py` centralizes the canonical headers,
+established style, destination policy, and atomic workbook saving shared with
+export.
+
+## Consequences
+
+- `main.py` remains terminal orchestration only.
+- Excel parsing never reads or writes JSON and never creates persisted
+  identities.
+- Every imported transaction receives a new UUID, monotonic display ID, and
+  timestamp through existing creation behavior.
+- Any validation, duplicate, late conflict, or persistence failure imports
+  zero transactions.
+- A concurrent matching insert after preview is rejected under the final
+  mutation lock.
+- Current exports use the canonical `Date` header; imports also accept the
+  earlier `Transaction Date` export header for compatibility.
+- Only `.xlsx` new-transaction import is supported. `.xls`, `.xlsm`, CSV,
+  updates, ID/timestamp restoration, Account/Category creation, transfers,
+  multiple currencies, and partial import remain out of scope.

@@ -35,6 +35,13 @@ from excel_exporter import (
     export_transactions_to_excel,
     normalize_excel_destination,
 )
+from excel_import import ExcelImportError
+from excel_import_service import (
+    ExcelImportPreview,
+    ExcelImportService,
+)
+from excel_template import generate_excel_import_template
+from excel_workbook import ExcelWorkbookError
 from formatter import format_transactions
 from json_storage import StorageError
 from report import (
@@ -54,6 +61,7 @@ from transaction_service import (
     TransactionActiveDateMismatchError,
     TransactionNotFoundError,
     TransactionService,
+    TransactionServiceError,
 )
 from validators import validate_transaction_date, validate_transaction_type
 
@@ -92,6 +100,18 @@ TRANSACTION_CATEGORY_DISPLAY_LOOKUP = partial(
     categories_file=CATEGORIES_FILE,
     state_file=CATEGORY_STATE_FILE,
 )
+EXCEL_IMPORT_SERVICE = ExcelImportService(
+    TRANSACTION_SERVICE,
+    account_list=partial(
+        list_accounts,
+        accounts_file=ACCOUNTS_FILE,
+    ),
+    category_list=partial(
+        list_categories,
+        categories_file=CATEGORIES_FILE,
+        state_file=CATEGORY_STATE_FILE,
+    ),
+)
 
 ManagedRecord = TypeVar("ManagedRecord", Account, Category)
 AccountList = Callable[[], list[Account]]
@@ -99,6 +119,7 @@ CategoryList = Callable[..., list[Category]]
 AccountDisplayLookup = Callable[[str], Account | None]
 CategoryDisplayLookup = Callable[[str], Category | None]
 ExcelExporter = Callable[..., Path]
+ExcelTemplateGenerator = Callable[..., Path]
 
 """==============Handles Fanection================"""
 
@@ -504,6 +525,124 @@ def handle_excel_export(
         return
 
     print(f"Excel workbook exported to {result.resolve()}")
+
+
+def _print_excel_import_issues(preview: ExcelImportPreview) -> None:
+    print("\nExcel import validation failed.")
+    print(f"File: {preview.source_path}")
+    print(f"Invalid rows: {preview.invalid_row_count}")
+    print(f"Duplicate conflicts: {preview.duplicate_conflict_count}")
+    print("Issues:")
+    for issue in preview.issues:
+        print(f"- Row {issue.row_number}: {issue.message}")
+    print("No transactions were imported.")
+
+
+def _print_excel_import_preview(preview: ExcelImportPreview) -> None:
+    print("\n=== Excel Import Preview ===")
+    print(f"File: {preview.source_path}")
+    print(f"Valid transactions: {preview.valid_candidate_count}")
+    print(f"Income transactions: {preview.income_transaction_count}")
+    print(f"Expense transactions: {preview.expense_transaction_count}")
+    print(f"Total income: {preview.total_income:.2f}")
+    print(f"Total expense: {preview.total_expense:.2f}")
+    print(f"Net balance impact: {preview.net_balance_impact:.2f}")
+
+
+def handle_excel_import(
+    import_service: ExcelImportService | None = None,
+) -> None:
+    """Coordinate validation, preview, confirmation, and one atomic import."""
+    import_service = (
+        EXCEL_IMPORT_SERVICE if import_service is None else import_service
+    )
+    source = input("Excel file to import (.xlsx): ").strip()
+    if not source:
+        print("Excel import cancelled.")
+        return
+
+    try:
+        preview = import_service.analyze(source)
+    except (ExcelImportError, StorageError) as error:
+        print(f"Excel import error: {error}")
+        return
+
+    if not preview.is_valid:
+        _print_excel_import_issues(preview)
+        return
+    if preview.valid_candidate_count == 0:
+        print("No transaction rows were found. Nothing was imported.")
+        return
+
+    _print_excel_import_preview(preview)
+    confirmation = input(
+        "Import all previewed transactions? (y/N): "
+    ).strip().casefold()
+    if confirmation not in {"y", "yes"}:
+        print("Excel import cancelled. No transactions were imported.")
+        return
+
+    try:
+        result = import_service.persist(preview)
+    except (
+        ExcelImportError,
+        StorageError,
+        TransactionServiceError,
+    ) as error:
+        print(f"Excel import error: {error}")
+        return
+    print(
+        f"Imported {result.imported_count} transaction(s) atomically. "
+        f"Net balance impact: {result.net_balance_impact:.2f}"
+    )
+
+
+def handle_excel_import_template(
+    *,
+    today_provider: TodayProvider | None = None,
+    account_list: AccountList | None = None,
+    category_list: CategoryList | None = None,
+    generator: ExcelTemplateGenerator = generate_excel_import_template,
+) -> None:
+    """Coordinate one safe, workspace-aware Excel template generation."""
+    today_provider = (
+        TRANSACTION_TODAY_PROVIDER
+        if today_provider is None
+        else today_provider
+    )
+    account_list = list_accounts if account_list is None else account_list
+    category_list = list_categories if category_list is None else category_list
+    default_destination = Path("exports") / (
+        "smart_expense_tracker_import_template_"
+        f"{today_provider().isoformat()}.xlsx"
+    )
+    entered_destination = input(
+        f"Template destination [{default_destination}]: "
+    ).strip()
+
+    try:
+        destination = normalize_excel_destination(
+            entered_destination or default_destination
+        )
+        overwrite = False
+        if destination.exists():
+            confirmation = input(
+                f"{destination} already exists. Overwrite? (y/N): "
+            ).strip().casefold()
+            if confirmation not in {"y", "yes"}:
+                print("Excel template generation cancelled.")
+                return
+            overwrite = True
+        result = generator(
+            account_list(),
+            category_list(),
+            destination,
+            overwrite=overwrite,
+        )
+    except (ExcelWorkbookError, StorageError) as error:
+        print(f"Excel template error: {error}")
+        return
+    print(f"Excel import template created at {result.resolve()}")
 
 
 def handle_view_transactions(
@@ -1078,6 +1217,8 @@ MENU_ACTIONS = {
     "5": account_management_menu,
     "6": category_management_menu,
     "7": handle_excel_export,
+    "8": handle_excel_import,
+    "9": handle_excel_import_template,
 }
 
 """=================Main fanection=================="""
@@ -1098,6 +1239,8 @@ def main() -> None:
         print("5. Account Management")
         print("6. Category Management")
         print("7. Export transactions to Excel")
+        print("8. Import transactions from Excel")
+        print("9. Generate Excel import template")
         print("0. Exit")
 
         choice = input("\n===>Choose an option: ")
