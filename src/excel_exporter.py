@@ -3,30 +3,29 @@
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
-import os
 from pathlib import Path
-import tempfile
 import unicodedata
 
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font, PatternFill
-from openpyxl.worksheet.worksheet import Worksheet
 
+from excel_workbook import (
+    AMOUNT_FORMAT,
+    DATE_FORMAT,
+    DATETIME_FORMAT,
+    EXPORTED_TRANSACTION_HEADERS,
+    ExcelDestinationExistsError,
+    ExcelSaveError,
+    ExcelWorkbookError,
+    InvalidExcelDestinationError,
+    normalize_excel_destination,
+    save_workbook_atomic,
+    style_table,
+)
 from id_generator import parse_display_id
 from report import calculate_financial_summary
 from transaction import Transaction
 
-TRANSACTION_HEADERS = (
-    "Display ID",
-    "Transaction Date",
-    "Type",
-    "Amount",
-    "Description",
-    "Account",
-    "Category",
-    "Created At",
-    "Updated At",
-)
+TRANSACTION_HEADERS = EXPORTED_TRANSACTION_HEADERS
 SUMMARY_HEADERS = ("Metric", "Value")
 CATEGORY_SUMMARY_HEADERS = (
     "Category",
@@ -34,43 +33,7 @@ CATEGORY_SUMMARY_HEADERS = (
     "Transaction Count",
     "Total Amount",
 )
-AMOUNT_FORMAT = "#,##0.00"
-DATE_FORMAT = "yyyy-mm-dd"
-DATETIME_FORMAT = "yyyy-mm-dd hh:mm:ss"
-
-
-class ExcelExportError(Exception):
-    """Base class for controlled Excel export failures."""
-
-
-class InvalidExcelDestinationError(ExcelExportError, ValueError):
-    """Raised when a destination cannot represent an Excel workbook."""
-
-
-class ExcelDestinationExistsError(ExcelExportError, FileExistsError):
-    """Raised when export would overwrite a file without permission."""
-
-
-class ExcelSaveError(ExcelExportError, OSError):
-    """Raised when a workbook cannot be written safely."""
-
-
-def normalize_excel_destination(destination: Path | str) -> Path:
-    """Return a normalized .xlsx path or reject a misleading extension."""
-    path = Path(destination).expanduser()
-    if not path.name or path.name in {".", ".."}:
-        raise InvalidExcelDestinationError("Excel destination must name a file.")
-    if path.exists() and path.is_dir():
-        raise InvalidExcelDestinationError(
-            "Excel destination must name a file, not a directory."
-        )
-    if not path.suffix:
-        path = path.with_suffix(".xlsx")
-    elif path.suffix.casefold() != ".xlsx":
-        raise InvalidExcelDestinationError(
-            "Excel destination must use the .xlsx extension."
-        )
-    return path
+ExcelExportError = ExcelWorkbookError
 
 
 def _transaction_order(transaction: Transaction) -> tuple:
@@ -97,32 +60,6 @@ def _excel_datetime(value: datetime | None) -> datetime | None:
     if value is None or value.tzinfo is None:
         return value
     return value.astimezone(timezone.utc).replace(tzinfo=None)
-
-
-def _style_table(
-    worksheet: Worksheet,
-    widths: Sequence[float],
-    *,
-    wrap_columns: set[int] | None = None,
-) -> None:
-    header_fill = PatternFill("solid", fgColor="1F4E78")
-    header_font = Font(color="FFFFFF", bold=True)
-    for cell in worksheet[1]:
-        cell.fill = header_fill
-        cell.font = header_font
-        cell.alignment = Alignment(horizontal="center", vertical="center")
-    worksheet.freeze_panes = "A2"
-    worksheet.auto_filter.ref = worksheet.dimensions
-    for index, width in enumerate(widths, start=1):
-        worksheet.column_dimensions[
-            worksheet.cell(row=1, column=index).column_letter
-        ].width = width
-    for column in wrap_columns or set():
-        for row in range(2, worksheet.max_row + 1):
-            worksheet.cell(row=row, column=column).alignment = Alignment(
-                vertical="top",
-                wrap_text=True,
-            )
 
 
 def _write_transactions(
@@ -163,7 +100,7 @@ def _write_transactions(
     for column in ("H", "I"):
         for cell in worksheet[column][1:]:
             cell.number_format = DATETIME_FORMAT
-    _style_table(
+    style_table(
         worksheet,
         (14, 18, 12, 15, 42, 24, 24, 22, 22),
         wrap_columns={5},
@@ -195,7 +132,7 @@ def _write_summary(
         worksheet.append(row)
     for cell in worksheet["B"][1:4]:
         cell.number_format = AMOUNT_FORMAT
-    _style_table(worksheet, (30, 20))
+    style_table(worksheet, (30, 20))
 
 
 def _write_category_summary(
@@ -231,7 +168,7 @@ def _write_category_summary(
         )
     for cell in worksheet["D"][1:]:
         cell.number_format = AMOUNT_FORMAT
-    _style_table(worksheet, (26, 14, 20, 18))
+    style_table(worksheet, (26, 14, 20, 18))
 
 
 def _build_workbook(
@@ -256,36 +193,14 @@ def export_transactions_to_excel(
     overwrite: bool = False,
 ) -> Path:
     """Create an atomic reporting workbook without reading persistence."""
-    destination_path = normalize_excel_destination(destination)
-    if destination_path.exists() and not overwrite:
-        raise ExcelDestinationExistsError(
-            f"Excel destination already exists: {destination_path}"
-        )
-
     transaction_snapshot = tuple(transactions)
     workbook = _build_workbook(
         transaction_snapshot,
         {} if account_names is None else account_names,
         {} if category_names is None else category_names,
     )
-    temporary_path: Path | None = None
-    try:
-        destination_path.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(
-            prefix=f".{destination_path.stem}.",
-            suffix=".xlsx",
-            dir=destination_path.parent,
-            delete=False,
-        ) as temporary_file:
-            temporary_path = Path(temporary_file.name)
-        workbook.save(temporary_path)
-        os.replace(temporary_path, destination_path)
-    except (OSError, ValueError) as error:
-        raise ExcelSaveError(
-            f"Could not save Excel workbook to {destination_path}: {error}"
-        ) from error
-    finally:
-        workbook.close()
-        if temporary_path is not None:
-            temporary_path.unlink(missing_ok=True)
-    return destination_path
+    return save_workbook_atomic(
+        workbook,
+        destination,
+        overwrite=overwrite,
+    )

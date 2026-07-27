@@ -133,7 +133,7 @@ and CLI data/query orchestration. All output uses pytest temporary paths.
 
 ---
 
-# v1.3.0 Development Result
+# v1.3.0 Release Result
 
 The packaging and CI development suite completes successfully:
 
@@ -166,6 +166,56 @@ and wheel, installs that wheel into a clean temporary environment, confirms
 `expense-tracker` is installed, and sends controlled `0` input from a temporary
 workspace. Release verification repeats the clean wheel installation and
 verifies imports from outside the repository.
+
+---
+
+# Excel Import Development Result
+
+The Excel import development suite completes successfully:
+
+```text
+467 passed
+```
+
+The additional coverage verifies:
+
+- Missing, misleading-extension, corrupt, and unsupported workbook inputs
+- Exact Transactions worksheet naming and controlled workbook errors
+- Required, normalized, duplicate, extra, and legacy-compatible headers
+- Native Excel date/datetime cells and supported text date normalization
+- Blank, Boolean, invalid-calendar, unsupported, and uncached-formula dates
+- Integer, float, numeric-text, positive, finite amount rules
+- Type trimming/case normalization and unsupported/blank types
+- Existing description trimming/blank behavior and non-text rejection
+- Completely empty rows, partial rows, physical row counts, and Excel row
+  number preservation
+- Read-only, calculated-value, no-external-link workbook options and resource
+  closing on success and controlled failure
+- Active, inactive, unknown, Unicode/case-normalized Account and Category names
+- Category/type compatibility and rejection of UUID text as a name
+- Duplicate keys against stored managed and resolvable legacy transactions
+- Normalized descriptions, earlier workbook rows, and every distinct key field
+- Matching stored display-ID and earlier-row conflict diagnostics
+- New UUIDs, timestamps, monotonic display IDs, deleted-ID non-reuse, and row
+  order
+- One-lock ordered bulk persistence, candidate validation, atomic replacement,
+  late-conflict rejection, and original-file preservation after failure
+- Reimporting the same workbook without silent duplication
+- Exact template worksheets, instructions, headers, formatting, named ranges,
+  Type-dependent row dropdowns, active-only reference data, one/both empty
+  category groups, Unicode values, actual header positions, stale
+  Category/type rejection, and UUID exclusion
+- Template destination normalization, overwrite protection, save-failure
+  cleanup, and workspace-dated CLI default
+- Import/template menu reachability, complete issue output, no confirmation for
+  invalid previews, valid preview totals, cancellation, one persistence call,
+  success summaries, controlled errors, and unexpected-error propagation
+- Import compatibility with the current transaction export and ignored
+  exported identity/timestamp metadata
+
+All generated workbooks and JSON documents use pytest temporary paths. A
+manual visual pass renders the three template sheets and verifies unclipped,
+single-page-width Instructions, Transactions, and Reference Data layouts.
 
 ---
 
@@ -204,9 +254,10 @@ The Date-based Transaction Management verification also confirms:
 
 Linting, static typing, and coverage policy remain planned. Future interfaces
 such as a GUI or Telegram bot will require end-to-end tests. SQLite, Decimal
-money, imports, PDF, charts, and other integration-specific tests remain future
-work. Excel export coverage is included in v1.2.0; packaging and CI coverage is
-included in v1.3.0.
+money, PDF, charts, and other integration-specific tests remain future work.
+Excel export coverage is included in v1.2.0; packaging and CI coverage is
+included in v1.3.0; Excel import and template coverage is included in the next
+release.
 
 ---
 

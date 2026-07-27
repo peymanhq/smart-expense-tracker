@@ -1,6 +1,7 @@
 """Application workflows for date-scoped transaction management."""
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import date, datetime
 
 from account import Account
@@ -15,6 +16,7 @@ from transaction import Transaction
 from transaction_factory import create_transaction
 from transaction_repository import (
     JsonTransactionRepository,
+    RepositoryTransactionConflictError,
     RepositoryTransactionNotFoundError,
     TransactionDateSummary,
     TransactionRepository,
@@ -28,6 +30,20 @@ from validators import (
 
 AccountLookup = Callable[[str], Account | None]
 CategoryLookup = Callable[[str], Category | None]
+
+
+@dataclass(frozen=True)
+class TransactionCreateRequest:
+    """Service-boundary input for one ordered bulk-created transaction."""
+
+    transaction_date: date
+    transaction_type: str
+    amount: float
+    category: str
+    account: str
+    description: str
+    account_id: str
+    category_id: str
 
 
 class _ReferenceNotSupplied:
@@ -70,6 +86,37 @@ class TransactionActiveDateMismatchError(TransactionServiceError):
 
 class InvalidUtcClockError(TransactionServiceError, ValueError):
     """Raised when the injected UTC clock violates its contract."""
+
+
+class TransactionBulkConflictError(TransactionServiceError):
+    """Raised when atomic bulk creation detects a late duplicate conflict."""
+
+    def __init__(
+        self,
+        candidate_index: int,
+        *,
+        matching_display_id: str | None = None,
+        earlier_candidate_index: int | None = None,
+    ) -> None:
+        self.candidate_index = candidate_index
+        self.matching_display_id = matching_display_id
+        self.earlier_candidate_index = earlier_candidate_index
+        super().__init__("Bulk transaction creation found a duplicate conflict.")
+
+
+class TransactionBulkValidationError(TransactionServiceError):
+    """Raised when one ordered bulk request becomes invalid before mutation."""
+
+    def __init__(
+        self,
+        candidate_index: int,
+        reason: Exception,
+    ) -> None:
+        self.candidate_index = candidate_index
+        self.reason = reason
+        super().__init__(
+            f"Bulk transaction candidate {candidate_index} is invalid: {reason}"
+        )
 
 
 class ManagedReferenceError(TransactionServiceError, ValueError):
@@ -293,6 +340,53 @@ class TransactionService:
             category_id=category_id,
         )
         return self._repository.create(transaction)
+
+    def add_transactions(
+        self,
+        requests: list[TransactionCreateRequest],
+    ) -> list[Transaction]:
+        """Validate and atomically persist ordered new transactions."""
+        candidates: list[Transaction] = []
+        for index, request in enumerate(requests):
+            try:
+                accepted_date = self._accepted_date(request.transaction_date)
+                accepted_type = validate_transaction_type(
+                    request.transaction_type
+                )
+                managed_account = self._active_account(request.account_id)
+                managed_category = self._compatible_category(
+                    request.category_id,
+                    accepted_type,
+                    require_active=True,
+                )
+                timestamp = self._utc_now()
+                candidates.append(
+                    create_transaction(
+                        transaction_type=accepted_type,
+                        amount=request.amount,
+                        category=managed_category.name,
+                        account=managed_account.name,
+                        description=request.description,
+                        transaction_date=accepted_date,
+                        created_at=timestamp,
+                        updated_at=timestamp,
+                        account_id=managed_account.id,
+                        category_id=managed_category.id,
+                    )
+                )
+            except (
+                FutureTransactionDateError,
+                ManagedReferenceError,
+            ) as error:
+                raise TransactionBulkValidationError(index, error) from error
+        try:
+            return self._repository.create_many(candidates)
+        except RepositoryTransactionConflictError as error:
+            raise TransactionBulkConflictError(
+                error.candidate_index,
+                matching_display_id=error.matching_display_id,
+                earlier_candidate_index=error.earlier_candidate_index,
+            ) from error
 
     def list_transactions_by_date(
         self,
