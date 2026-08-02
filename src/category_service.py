@@ -1,23 +1,16 @@
 """Business operations for standalone category management."""
 
 from dataclasses import dataclass, replace
-from pathlib import Path
 from uuid import UUID
 
 from category import Category, canonicalize_category_name, category_name_key
-from category_storage import (
-    CATEGORIES_FILE,
-    CATEGORY_STATE_FILE,
-    category_file_lock,
-    get_next_category_display_id,
-    load_categories,
-    save_categories,
+from category_repository import (
+    CategoryRepository,
+    CategoryRepositoryConflictError,
+    CategoryRepositoryNotFoundError,
+    CategoryRepositoryRecordChangedError,
 )
-from id_generator import (
-    generate_category_display_id,
-    generate_category_id,
-    parse_category_display_id,
-)
+from id_generator import generate_category_id, parse_category_display_id
 from validators import validate_required_text
 
 
@@ -52,7 +45,7 @@ def _has_duplicate_active_name(
 ) -> bool:
     normalized_name = category_name_key(name)
     return any(
-        category is not excluded_category
+        category != excluded_category
         and category.is_active
         and category.transaction_type == transaction_type
         and category_name_key(category.name) == normalized_name
@@ -60,116 +53,81 @@ def _has_duplicate_active_name(
     )
 
 
-def _find_category_by_display_id(
-    categories: list[Category],
-    display_id: str,
-) -> Category | None:
-    if not isinstance(display_id, str):
-        return None
-    number = parse_category_display_id(display_id)
-    if number is None:
-        return None
-    normalized_display_id = generate_category_display_id(number)
-    return next(
-        (
-            category
-            for category in categories
-            if category.display_id == normalized_display_id
-        ),
-        None,
-    )
+class CategoryService:
+    """Apply Category business rules through an injected repository."""
 
+    def __init__(self, repository: CategoryRepository) -> None:
+        self._repository = repository
 
-def list_categories(
-    categories_file: Path = CATEGORIES_FILE,
-    state_file: Path = CATEGORY_STATE_FILE,
-    *,
-    active_only: bool = False,
-    transaction_type: str | None = None,
-) -> list[Category]:
-    """Return filtered categories ordered by type and numeric display ID."""
-    cleaned_type = None
-    if transaction_type is not None:
+    def list_categories(
+        self,
+        *,
+        active_only: bool = False,
+        transaction_type: str | None = None,
+    ) -> list[Category]:
+        """Return filtered Categories in deterministic order."""
+        cleaned_type = None
+        if transaction_type is not None:
+            cleaned_type = _clean_transaction_type(transaction_type)
+            if cleaned_type is None:
+                raise ValueError("Invalid transaction type.")
+
+        categories = self._repository.list_all()
+        if active_only:
+            categories = [
+                category for category in categories if category.is_active
+            ]
+        if cleaned_type is not None:
+            categories = [
+                category
+                for category in categories
+                if category.transaction_type == cleaned_type
+            ]
+        return sorted(
+            categories,
+            key=lambda category: (
+                category.transaction_type,
+                parse_category_display_id(category.display_id) or 0,
+            ),
+        )
+
+    def get_category_by_id(self, category_id: str) -> Category | None:
+        """Return a Category by canonical internal UUID."""
+        if not isinstance(category_id, str):
+            return None
+        try:
+            parsed_id = UUID(category_id)
+        except (ValueError, AttributeError):
+            return None
+        if str(parsed_id) != category_id:
+            return None
+        return self._repository.get_by_id(category_id)
+
+    def get_category_by_display_id(
+        self,
+        display_id: str,
+    ) -> Category | None:
+        """Return a Category by normalized display ID."""
+        if not isinstance(display_id, str):
+            return None
+        return self._repository.get_by_display_id(display_id)
+
+    def add_category(
+        self,
+        name: str,
+        transaction_type: str,
+    ) -> CategoryOperationResult:
+        """Validate and persist a new Category."""
+        try:
+            cleaned_name = _clean_category_name(name)
+        except ValueError as error:
+            return CategoryOperationResult(False, str(error))
         cleaned_type = _clean_transaction_type(transaction_type)
         if cleaned_type is None:
-            raise ValueError("Invalid transaction type.")
+            return CategoryOperationResult(False, "Invalid transaction type.")
 
-    categories = load_categories(categories_file, state_file)
-    if active_only:
-        categories = [
-            category for category in categories if category.is_active
-        ]
-    if cleaned_type is not None:
-        categories = [
-            category
-            for category in categories
-            if category.transaction_type == cleaned_type
-        ]
-    return sorted(
-        categories,
-        key=lambda category: (
-            category.transaction_type,
-            parse_category_display_id(category.display_id) or 0,
-        ),
-    )
-
-
-def get_category_by_id(
-    category_id: str,
-    categories_file: Path = CATEGORIES_FILE,
-    state_file: Path = CATEGORY_STATE_FILE,
-) -> Category | None:
-    """Return an active or inactive category by canonical internal UUID."""
-    if not isinstance(category_id, str):
-        return None
-    try:
-        parsed_id = UUID(category_id)
-    except (ValueError, AttributeError):
-        return None
-    if str(parsed_id) != category_id:
-        return None
-    return next(
-        (
-            category
-            for category in list_categories(categories_file, state_file)
-            if category.id == category_id
-        ),
-        None,
-    )
-
-
-def get_category_by_display_id(
-    display_id: str,
-    categories_file: Path = CATEGORIES_FILE,
-    state_file: Path = CATEGORY_STATE_FILE,
-) -> Category | None:
-    """Return an active or inactive category by normalized display ID."""
-    return _find_category_by_display_id(
-        list_categories(categories_file, state_file),
-        display_id,
-    )
-
-
-def add_category(
-    name: str,
-    transaction_type: str,
-    categories_file: Path = CATEGORIES_FILE,
-    state_file: Path = CATEGORY_STATE_FILE,
-) -> CategoryOperationResult:
-    """Validate, create, and persist a standalone category."""
-    try:
-        cleaned_name = _clean_category_name(name)
-    except ValueError as error:
-        return CategoryOperationResult(False, str(error))
-
-    cleaned_type = _clean_transaction_type(transaction_type)
-    if cleaned_type is None:
-        return CategoryOperationResult(False, "Invalid transaction type.")
-
-    with category_file_lock(categories_file):
-        categories = load_categories(categories_file, state_file)
         if _has_duplicate_active_name(
-            categories,
+            self._repository.list_all(),
             cleaned_name,
             cleaned_type,
         ):
@@ -178,129 +136,204 @@ def add_category(
                 "An active category with this name and transaction type "
                 "already exists.",
             )
-
-        category = Category(
-            id=generate_category_id(),
-            display_id=get_next_category_display_id(
-                categories_file,
-                state_file,
-            ),
-            name=cleaned_name,
-            transaction_type=cleaned_type,
-        )
-        categories.append(category)
-        save_categories(categories, categories_file, state_file)
+        try:
+            category = self._repository.create(
+                generate_category_id(),
+                cleaned_name,
+                cleaned_type,
+            )
+        except CategoryRepositoryConflictError:
+            return CategoryOperationResult(
+                False,
+                "An active category with this name and transaction type "
+                "already exists.",
+            )
         return CategoryOperationResult(
             True,
             "Category added successfully.",
             category,
         )
 
+    def rename_category(
+        self,
+        display_id: str,
+        new_name: str,
+    ) -> CategoryOperationResult:
+        """Rename the Category matching a normalized display ID."""
+        while True:
+            category = self.get_category_by_display_id(display_id)
+            if category is None:
+                return CategoryOperationResult(False, "Category not found.")
+            try:
+                cleaned_name = _clean_category_name(new_name)
+            except ValueError as error:
+                return CategoryOperationResult(False, str(error), category)
+
+            if category.is_active and _has_duplicate_active_name(
+                self._repository.list_all(),
+                cleaned_name,
+                category.transaction_type,
+                excluded_category=category,
+            ):
+                return CategoryOperationResult(
+                    False,
+                    "An active category with this name and transaction type "
+                    "already exists.",
+                    category,
+                )
+            try:
+                renamed = self._repository.replace(
+                    category,
+                    replace(category, name=cleaned_name),
+                )
+            except CategoryRepositoryRecordChangedError:
+                continue
+            except CategoryRepositoryNotFoundError:
+                return CategoryOperationResult(False, "Category not found.")
+            except CategoryRepositoryConflictError:
+                return CategoryOperationResult(
+                    False,
+                    "An active category with this name and transaction type "
+                    "already exists.",
+                    category,
+                )
+            return CategoryOperationResult(
+                True,
+                "Category renamed successfully.",
+                renamed,
+            )
+
+    def activate_category(
+        self,
+        display_id: str,
+    ) -> CategoryOperationResult:
+        """Activate the Category matching a normalized display ID."""
+        while True:
+            category = self.get_category_by_display_id(display_id)
+            if category is None:
+                return CategoryOperationResult(False, "Category not found.")
+            if category.is_active:
+                return CategoryOperationResult(
+                    False,
+                    "Category is already active.",
+                    category,
+                )
+            if _has_duplicate_active_name(
+                self._repository.list_all(),
+                category.name,
+                category.transaction_type,
+                excluded_category=category,
+            ):
+                return CategoryOperationResult(
+                    False,
+                    "An active category with this name and transaction type "
+                    "already exists.",
+                    category,
+                )
+            try:
+                activated = self._repository.replace(
+                    category,
+                    replace(category, is_active=True),
+                )
+            except CategoryRepositoryRecordChangedError:
+                continue
+            except CategoryRepositoryNotFoundError:
+                return CategoryOperationResult(False, "Category not found.")
+            except CategoryRepositoryConflictError:
+                return CategoryOperationResult(
+                    False,
+                    "An active category with this name and transaction type "
+                    "already exists.",
+                    category,
+                )
+            return CategoryOperationResult(
+                True,
+                "Category activated successfully.",
+                activated,
+            )
+
+    def deactivate_category(
+        self,
+        display_id: str,
+    ) -> CategoryOperationResult:
+        """Deactivate the Category matching a normalized display ID."""
+        while True:
+            category = self.get_category_by_display_id(display_id)
+            if category is None:
+                return CategoryOperationResult(False, "Category not found.")
+            if not category.is_active:
+                return CategoryOperationResult(
+                    False,
+                    "Category is already inactive.",
+                    category,
+                )
+            try:
+                deactivated = self._repository.replace(
+                    category,
+                    replace(category, is_active=False),
+                )
+            except CategoryRepositoryRecordChangedError:
+                continue
+            except CategoryRepositoryNotFoundError:
+                return CategoryOperationResult(False, "Category not found.")
+            return CategoryOperationResult(
+                True,
+                "Category deactivated successfully.",
+                deactivated,
+            )
+
+
+def list_categories(
+    repository: CategoryRepository,
+    *,
+    active_only: bool = False,
+    transaction_type: str | None = None,
+) -> list[Category]:
+    return CategoryService(repository).list_categories(
+        active_only=active_only,
+        transaction_type=transaction_type,
+    )
+
+
+def get_category_by_id(
+    category_id: str,
+    repository: CategoryRepository,
+) -> Category | None:
+    return CategoryService(repository).get_category_by_id(category_id)
+
+
+def get_category_by_display_id(
+    display_id: str,
+    repository: CategoryRepository,
+) -> Category | None:
+    return CategoryService(repository).get_category_by_display_id(display_id)
+
+
+def add_category(
+    name: str,
+    transaction_type: str,
+    repository: CategoryRepository,
+) -> CategoryOperationResult:
+    return CategoryService(repository).add_category(name, transaction_type)
+
 
 def rename_category(
     display_id: str,
     new_name: str,
-    categories_file: Path = CATEGORIES_FILE,
-    state_file: Path = CATEGORY_STATE_FILE,
+    repository: CategoryRepository,
 ) -> CategoryOperationResult:
-    """Rename the category matching a normalized exact display ID."""
-    with category_file_lock(categories_file):
-        categories = load_categories(categories_file, state_file)
-        category = _find_category_by_display_id(categories, display_id)
-        if category is None:
-            return CategoryOperationResult(False, "Category not found.")
-
-        try:
-            cleaned_name = _clean_category_name(new_name)
-        except ValueError as error:
-            return CategoryOperationResult(False, str(error), category)
-
-        if category.is_active and _has_duplicate_active_name(
-            categories,
-            cleaned_name,
-            category.transaction_type,
-            excluded_category=category,
-        ):
-            return CategoryOperationResult(
-                False,
-                "An active category with this name and transaction type "
-                "already exists.",
-                category,
-            )
-
-        renamed_category = replace(category, name=cleaned_name)
-        categories[categories.index(category)] = renamed_category
-        save_categories(categories, categories_file, state_file)
-        return CategoryOperationResult(
-            True,
-            "Category renamed successfully.",
-            renamed_category,
-        )
+    return CategoryService(repository).rename_category(display_id, new_name)
 
 
 def activate_category(
     display_id: str,
-    categories_file: Path = CATEGORIES_FILE,
-    state_file: Path = CATEGORY_STATE_FILE,
+    repository: CategoryRepository,
 ) -> CategoryOperationResult:
-    """Activate the category matching a normalized exact display ID."""
-    with category_file_lock(categories_file):
-        categories = load_categories(categories_file, state_file)
-        category = _find_category_by_display_id(categories, display_id)
-        if category is None:
-            return CategoryOperationResult(False, "Category not found.")
-        if category.is_active:
-            return CategoryOperationResult(
-                False,
-                "Category is already active.",
-                category,
-            )
-        if _has_duplicate_active_name(
-            categories,
-            category.name,
-            category.transaction_type,
-            excluded_category=category,
-        ):
-            return CategoryOperationResult(
-                False,
-                "An active category with this name and transaction type "
-                "already exists.",
-                category,
-            )
-
-        activated_category = replace(category, is_active=True)
-        categories[categories.index(category)] = activated_category
-        save_categories(categories, categories_file, state_file)
-        return CategoryOperationResult(
-            True,
-            "Category activated successfully.",
-            activated_category,
-        )
+    return CategoryService(repository).activate_category(display_id)
 
 
 def deactivate_category(
     display_id: str,
-    categories_file: Path = CATEGORIES_FILE,
-    state_file: Path = CATEGORY_STATE_FILE,
+    repository: CategoryRepository,
 ) -> CategoryOperationResult:
-    """Deactivate the category matching a normalized exact display ID."""
-    with category_file_lock(categories_file):
-        categories = load_categories(categories_file, state_file)
-        category = _find_category_by_display_id(categories, display_id)
-        if category is None:
-            return CategoryOperationResult(False, "Category not found.")
-        if not category.is_active:
-            return CategoryOperationResult(
-                False,
-                "Category is already inactive.",
-                category,
-            )
-
-        deactivated_category = replace(category, is_active=False)
-        categories[categories.index(category)] = deactivated_category
-        save_categories(categories, categories_file, state_file)
-        return CategoryOperationResult(
-            True,
-            "Category deactivated successfully.",
-            deactivated_category,
-        )
+    return CategoryService(repository).deactivate_category(display_id)

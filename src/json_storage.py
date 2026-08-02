@@ -6,9 +6,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-
-class StorageError(Exception):
-    """Raised when application data cannot be safely loaded or saved."""
+from persistence_errors import StorageError
 
 
 def write_json_atomic(

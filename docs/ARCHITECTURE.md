@@ -10,7 +10,7 @@ The long-term objective is to build a maintainable, testable, and extensible fin
 
 ---
 
-## Current Architecture (v1.4.0)
+## Current Architecture (v1.5.0 development)
 
 The current application follows this structure:
 
@@ -20,18 +20,17 @@ User
   ▼
 main.py
   │
-  ├── account_service.py
-  │     ├── account_storage.py
-  │     └── account.py
-  ├── category_service.py
-  │     ├── category_storage.py
-  │     └── category.py
-  ├── transaction_service.py
-  │     ├── transaction_repository.py
-  │     │     └── storage.py
-  │     ├── transaction_factory.py
-  │     ├── clock.py
-  │     └── date_policy.py
+  ├── application.py
+  │     ├── account_service.py
+  │     │     └── account_repository.py
+  │     ├── category_service.py
+  │     │     └── category_repository.py
+  │     ├── transaction_service.py
+  │     │     └── transaction_repository.py
+  │     └── excel_import_service.py
+  ├── account_storage.py
+  ├── category_storage.py
+  ├── storage.py
   ├── validators.py
   ├── report.py
   ├── excel_exporter.py
@@ -53,13 +52,21 @@ main.py
 | Module | Responsibility |
 |---------|----------------|
 | `main.py` | CLI interaction and workflow orchestration |
+| `application.py` | Typed construction of services and JSON repositories for one workspace |
 | `account.py` | Account data model |
 | `account_service.py` | Account validation and add, rename, deactivate, and activate rules |
+| `account_repository.py` | Account repository protocol and JSON implementation |
 | `account_storage.py` | Validated, locked account persistence and legacy migration |
 | `category.py` | Passive standalone Category data model |
 | `category_service.py` | Category validation, listing, and mutation rules |
+| `category_repository.py` | Category repository protocol and JSON implementation |
 | `category_storage.py` | Validated, locked category-list and counter persistence |
 | `json_storage.py` | Shared atomic JSON writing |
+| `persistence_errors.py` | Backend-neutral persistence failure exposed to orchestration |
+| `sqlite_account_repository.py` | Inactive SQLite implementation of the Account repository protocol |
+| `sqlite_category_repository.py` | Inactive SQLite implementation of the Category repository protocol |
+| `sqlite_database.py` | Inactive SQLite path, connection, and transaction foundation |
+| `sqlite_schema.py` | Inactive SQLite schema version 1 initialization and validation |
 | `transaction.py` | Typed, passive Transaction data model |
 | `transaction_factory.py` | Transaction creation |
 | `transaction_service.py` | Transaction workflows, date rules, and timestamp behavior |
@@ -79,9 +86,10 @@ main.py
 | `id_generator.py` | UUID creation and display-ID formatting, parsing, and legacy-state calculation |
 
 `main.py` owns terminal interaction and date-workspace session state.
-`TransactionService` coordinates transaction workflows without terminal or
-JSON access. `TransactionRepository` isolates the application layer from the
-current JSON implementation.
+`application.py` owns dependency construction for the current JSON backend.
+Application services coordinate workflows without terminal or JSON access.
+The Account, Category, and Transaction repository protocols isolate the
+application layer from the current JSON implementations.
 
 ### Excel Export Data Flow
 
@@ -107,9 +115,10 @@ column widths, filters, frozen headers, and safe saving. It reuses
 persistence implementation. The exporter writes a same-directory temporary
 workbook and atomically replaces the final path only after a complete save.
 
-`main.py` also composes `TransactionService` with the public Account and
-Category UUID query functions. The service receives only lookup callables and
-does not know Account/Category file paths or storage formats.
+The application factory composes `TransactionService` with the public Account
+and Category UUID query functions. The service requires an explicitly supplied
+repository and receives only lookup callables; it does not know managed-record
+file paths or storage formats.
 
 ### Excel Import Data Flow
 
@@ -168,23 +177,28 @@ services without terminal input or output. `main.py` is the current CLI
 adapter; a future messaging adapter can invoke the same boundaries without
 moving workbook parsing or JSON persistence into the adapter.
 
-Account workflows use a focused application-service module so their business
-rules remain independent of CLI input and output.
+`AccountService` and `CategoryService` own managed-record validation and
+business rules. They receive repository protocols and do not accept file
+paths, acquire file locks, read JSON, or manage counter files. Small
+function-oriented wrappers remain available but likewise require repository
+objects.
 
-Category workflows use the same focused service boundary and remain
-independent of transaction persistence details.
+The services expose public managed-record queries. Account queries list all or
+only active records and resolve canonical UUIDs or normalized display IDs.
+Category queries add active-state and transaction-type filters while retaining
+the established type-then-display-ID ordering. UUID and display-ID lookup
+includes inactive records so historical callers can still resolve them.
 
-The function-oriented account and category services also expose public,
-read-only managed-record queries. Account queries list all or only active
-records and resolve canonical UUIDs or normalized display IDs. Category queries
-add active-state and transaction-type filters while retaining the established
-type-then-display-ID ordering. UUID and display-ID lookup includes inactive
-records so historical callers can still resolve them; active-only lists are the
-boundary used by transaction selection workflows. These queries return new
-collections, propagate storage errors, and do not modify persisted data.
-`main.py` binds the active-list and normalized display-ID query functions to
-runtime paths for transaction selection. Display IDs remain user-facing keys;
-the selected domain UUIDs cross into `TransactionService`.
+`JsonAccountRepository` and `JsonCategoryRepository` own the existing JSON
+paths, compatibility loaders, mutation locks, atomic writes, and display-ID
+allocation. Creation allocates and persists under one lock. Replacement
+preserves UUID and display ID, checks that the service's source record is still
+current, and rechecks persisted uniqueness inside the protected mutation.
+`build_json_application()` constructs these repositories and injects their
+services into transaction and Excel workflows. `main.py` consumes the returned
+frozen service aggregate and contains no repository construction details.
+Supplying a workspace root isolates all JSON data below that root; omitting it
+retains the existing current-working-directory-relative `data/` behavior.
 
 ---
 
@@ -251,7 +265,8 @@ before aggregation. Neither module consults the clock.
 ### Account Management
 
 `account_service.py` validates account names, rejects duplicate active names,
-and coordinates add, rename, deactivate, and activate operations. Mutations
+and coordinates add, rename, deactivate, and activate operations through
+`AccountRepository`. Mutations
 return an explicit result containing success state, a user-facing message, and
 the affected account when applicable. Display-ID lookup normalizes whitespace,
 letter case, and numeric padding. Account names use NFC Unicode normalization
@@ -271,7 +286,8 @@ active or inactive records, with UUID lookup requiring canonical UUID text.
 
 `category_service.py` trims and NFC-normalizes names, canonicalizes transaction
 types to `income` or `expense`, and returns explicit operation results for add,
-rename, activate, and deactivate behavior. Active-name uniqueness is scoped by
+rename, activate, and deactivate behavior through `CategoryRepository`.
+Active-name uniqueness is scoped by
 transaction type and compared case-insensitively. Inactive names may be reused;
 activation is rejected if it would conflict with an active category of the
 same type. Listing is deterministic: transaction type, then numeric display ID.
@@ -380,6 +396,137 @@ transactions may be linked during update. Explicit unlinking and automatic
 legacy reconciliation remain future work. Separate JSON files and locks provide
 soft rather than database-level referential integrity.
 
+The older function-oriented transaction operations in `storage.py` remain
+supported compatibility surfaces and retain their tests. Production
+composition reaches transaction persistence exclusively through
+`TransactionRepository`; the application factory never injects those legacy
+functions into a service.
+
+---
+
+## SQLite Persistence Foundation
+
+SQLite infrastructure and Account/Category repository adapters exist but are
+not part of production composition. `build_json_application()` remains
+unchanged, JSON remains the only active backend, and neither `main.py` nor any
+service imports SQLite. There is no SQLite Transaction repository, backend
+selector, or JSON migration.
+
+### Path and Connection Policy
+
+The future workspace database path is:
+
+```text
+<workspace root>/data/smart_expense_tracker.sqlite3
+```
+
+When no root is supplied, the path remains the unresolved relative path
+`data/smart_expense_tracker.sqlite3`, preserving current-working-directory
+workspace behavior. Calculating a path and importing the SQLite modules create
+no directory or file. A short-lived connection creates the parent directory for
+a real file-backed database.
+
+Every connection uses Python's built-in `sqlite3`, returns `sqlite3.Row`
+objects, enables `PRAGMA foreign_keys = ON`, and configures a five-second
+`busy_timeout`. Journal mode and synchronous mode retain SQLite defaults;
+the foundation does not introduce WAL side files or unneeded tuning. There is
+no ORM, external database dependency, global connection, or import-time access.
+
+Writes use an explicit `BEGIN IMMEDIATE` context. Successful work commits once;
+application exceptions and SQLite failures roll back the complete transaction,
+and the connection is always closed. This boundary will allow a future
+repository to allocate a display ID and insert its record atomically.
+
+### Schema Version 1
+
+Initialization creates all version 1 objects in one transaction and writes the
+version only as part of that transaction. Repeated initialization validates
+and preserves a valid version 1 database. Older, newer, malformed, partial, or
+constraint-incomplete schemas are rejected without rebuilding, downgrading, or
+deleting data. Upgrade migrations are deferred.
+
+Version 1 contains:
+
+- `schema_metadata`: one singleton schema-version row.
+- `display_id_counters`: independent next values for Account, Category, and
+  Transaction display IDs. CHECK constraints, a primary key, and triggers
+  prevent invalid keys, non-positive values, deletion, and counter regression.
+- `accounts`: UUID identity, `A-####` display ID, name, Unicode comparison key,
+  and active state.
+- `categories`: UUID identity, `C-####` display ID, name, Unicode comparison
+  key, income/expense type, and active state.
+- `transactions`: UUID identity, `T-####` display ID, income/expense type,
+  amount, Account/Category name snapshots, nullable managed UUID references,
+  description, financial date, and nullable creation/update timestamps.
+
+Account active-name uniqueness uses a partial unique index over a
+Python-produced NFC/casefold comparison key. Category uniqueness uses the same
+approach scoped by transaction type. Inactive duplicates remain permitted.
+SQLite's built-in `lower()` is not a Unicode casefold replacement, so future
+repositories are responsible for producing these keys with the existing domain
+normalizers.
+
+Nullable Transaction references support current legacy records. When present,
+foreign keys use restrictive update/delete behavior; cascading deletion is not
+introduced. Indexes cover display IDs, active managed-record lookup, Category
+type, Transaction date/type, and both managed UUID references.
+
+Amounts use SQLite `REAL` to preserve the application's current Python
+`float` behavior. Moving to decimal text or integer minor units requires a
+separate domain-level decision. Transaction dates use ISO `YYYY-MM-DD` text,
+and timestamps use canonical ISO-8601 UTC text. Full calendar, timestamp,
+and normalization validation remains in the validation/service layer and
+repository row-conversion code rather than brittle SQL expressions. Version 1
+does not claim SQL-level finite-number validation; tightening non-finite float
+behavior requires a separate application decision.
+
+Low-level SQLite failures are chained beneath backend-neutral `StorageError`
+exceptions. Unsupported versions use
+`UnsupportedSchemaVersionError`, which remains catchable as `StorageError`.
+
+### SQLite Repository Adapters
+
+`SQLiteAccountRepository` and `SQLiteCategoryRepository` implement the existing
+backend-neutral protocols and receive an explicit `SQLiteDatabase`. Constructing
+an adapter neither initializes a schema nor discovers a workspace; callers must
+initialize the supplied database through the existing schema foundation.
+
+Reads select explicit columns and return detached `Account` or `Category`
+models. Row mapping revalidates canonical UUIDs and display IDs, boolean state,
+Category type and NFC form, and the relationship between the visible name and
+its Python-produced NFC/casefold comparison key. Malformed persisted rows fail
+as `StorageError` rather than being skipped.
+
+Creation reads and conditionally increments the appropriate
+`display_id_counters` row and inserts the record inside one
+`BEGIN IMMEDIATE` transaction. Failed validation, uniqueness, locking, or
+insertion rolls back both changes, so a failed SQLite mutation does not consume
+an ID. Replacement preserves the stored UUID/display ID and, for Category, the
+stored transaction type. It compares the current row with the caller's expected
+model and uses a conditional update, preventing stale writers from silently
+overwriting a competing mutation.
+
+Account active-name uniqueness uses `name_key`; Category uses
+`(transaction_type, name_key)`. Inactive duplicates and cross-type Category
+names remain permitted. Repository prechecks produce the existing
+backend-neutral conflict errors, while database constraints remain the final
+defense against races.
+
+A shared parametrized contract suite runs the same creation, lookup, ordering,
+identity, replacement, uniqueness, inactive-reuse, counter, persistence, and
+service-filter behavior against both JSON and SQLite adapters. SQLite-specific
+tests additionally cover schema lifecycle, corrupted-row detection, competing
+instances, lock translation, rollback, and counter atomicity.
+
+`SQLiteTransactionRepository` implements the Transaction protocol while
+preserving snapshot fields and optional managed references. Single and bulk
+creation allocate `T-####` values and insert rows inside one `BEGIN IMMEDIATE`
+transaction. Bulk duplicate detection shares one backend-neutral comparison
+implementation with JSON, and every failed bulk write rolls back all rows and
+counter changes. Replacement preserves the stored UUID, display ID, and
+creation timestamp. Production activation, backend selection, and JSON
+migration remain separate work.
+
 ---
 
 ## Separation of Responsibilities
@@ -388,15 +535,19 @@ The current version separates terminal interaction (`main.py`), validation
 (`validators.py`), account operations (`account_service.py`), category
 operations (`category_service.py`), data records (`account.py`, `category.py`,
 and `transaction.py`), transaction application workflows
-(`transaction_service.py`), repository abstraction and JSON implementation
-(`transaction_repository.py`), construction (`transaction_factory.py`),
+(`transaction_service.py`), entity-specific repository abstractions and JSON
+implementations (`account_repository.py`, `category_repository.py`, and
+`transaction_repository.py`), application composition (`application.py`),
+domain construction (`transaction_factory.py`),
 lookup/search (`search.py`), reporting (`report.py`), formatting
 (`formatter.py`), and persistence infrastructure. Account and Category
 Management use separate persistence and connect to transactions only through
 service query APIs and optional UUID references.
 
-Replacing JSON later requires another `TransactionRepository` implementation;
-the transaction service and CLI workflow do not need direct storage changes.
+Replacing JSON later requires new implementations of the three repository
+protocols plus a new composition function beside `build_json_application()`;
+managed-record business rules, Excel services, and CLI workflows do not require
+direct storage changes.
 
 ---
 
@@ -632,13 +783,17 @@ The installed startup flow is:
 ```text
 expense-tracker
     -> main:main
-    -> existing CLI menus and dependency construction
+    -> existing CLI menus
+    -> build_json_application()
     -> application services and adapters
 ```
 
 `python3 src/main.py` reaches the same callable through the module's guarded
-runner. Importing `main` constructs dependencies but does not enter the input
-loop or read/write runtime files.
+runner. Importing `main` constructs one side-effect-free, immutable application
+service aggregate for compatibility with the existing handler surface; it does
+not enter the input loop or create/read/write runtime files. Explicit factory
+calls can construct isolated applications for other workspace roots without
+sharing mutable state.
 
 Default JSON paths and default Excel output are current-working-directory
 relative (`data/` and `exports/`). This makes the working directory the

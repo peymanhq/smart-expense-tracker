@@ -101,17 +101,8 @@ def test_runtime_service_uses_public_managed_uuid_lookups() -> None:
     account_lookup = main.TRANSACTION_SERVICE._account_lookup
     category_lookup = main.TRANSACTION_SERVICE._category_lookup
 
-    assert isinstance(account_lookup, partial)
-    assert account_lookup.func is main.get_account_by_id
-    assert account_lookup.keywords == {
-        "accounts_file": main.ACCOUNTS_FILE,
-    }
-    assert isinstance(category_lookup, partial)
-    assert category_lookup.func is main.get_category_by_id
-    assert category_lookup.keywords == {
-        "categories_file": main.CATEGORIES_FILE,
-        "state_file": main.CATEGORY_STATE_FILE,
-    }
+    assert account_lookup is main.get_account_by_id
+    assert category_lookup is main.get_category_by_id
 
     account_list = main.TRANSACTION_ACTIVE_ACCOUNT_LIST
     account_display_lookup = main.TRANSACTION_ACCOUNT_DISPLAY_LOOKUP
@@ -120,28 +111,12 @@ def test_runtime_service_uses_public_managed_uuid_lookups() -> None:
 
     assert isinstance(account_list, partial)
     assert account_list.func is main.list_accounts
-    assert account_list.keywords == {
-        "accounts_file": main.ACCOUNTS_FILE,
-        "active_only": True,
-    }
-    assert isinstance(account_display_lookup, partial)
-    assert account_display_lookup.func is main.get_account_by_display_id
-    assert account_display_lookup.keywords == {
-        "accounts_file": main.ACCOUNTS_FILE,
-    }
+    assert account_list.keywords == {"active_only": True}
+    assert account_display_lookup is main.get_account_by_display_id
     assert isinstance(category_list, partial)
     assert category_list.func is main.list_categories
-    assert category_list.keywords == {
-        "categories_file": main.CATEGORIES_FILE,
-        "state_file": main.CATEGORY_STATE_FILE,
-        "active_only": True,
-    }
-    assert isinstance(category_display_lookup, partial)
-    assert category_display_lookup.func is main.get_category_by_display_id
-    assert category_display_lookup.keywords == {
-        "categories_file": main.CATEGORIES_FILE,
-        "state_file": main.CATEGORY_STATE_FILE,
-    }
+    assert category_list.keywords == {"active_only": True}
+    assert category_display_lookup is main.get_category_by_display_id
 
 
 def test_workspace_defaults_to_today_and_displays_active_date(

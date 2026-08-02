@@ -2,32 +2,12 @@
 
 from collections.abc import Callable
 from datetime import date
-from functools import partial
 from pathlib import Path
 from typing import TypeVar
 
 from account import Account
-from account_service import (
-    activate_account,
-    add_account,
-    deactivate_account,
-    get_account_by_id,
-    get_account_by_display_id,
-    list_accounts,
-    rename_account,
-)
-from account_storage import ACCOUNTS_FILE, load_accounts
+from application import build_json_application
 from category import Category
-from category_service import (
-    activate_category,
-    add_category,
-    deactivate_category,
-    get_category_by_id,
-    get_category_by_display_id,
-    list_categories,
-    rename_category,
-)
-from category_storage import CATEGORIES_FILE, CATEGORY_STATE_FILE
 from clock import TodayProvider, local_today
 from date_policy import ValidatedDateQuery
 from excel_exporter import (
@@ -43,7 +23,7 @@ from excel_import_service import (
 from excel_template import generate_excel_import_template
 from excel_workbook import ExcelWorkbookError
 from formatter import format_transactions
-from json_storage import StorageError
+from persistence_errors import StorageError
 from report import (
     FinancialSummary,
     calculate_financial_summary,
@@ -55,7 +35,6 @@ from search import (
     find_transaction_by_display_id,
     search_transactions,
 )
-from transaction_repository import JsonTransactionRepository
 from transaction_service import (
     FutureTransactionDateError,
     TransactionActiveDateMismatchError,
@@ -66,52 +45,35 @@ from transaction_service import (
 from validators import validate_transaction_date, validate_transaction_type
 
 TRANSACTION_TODAY_PROVIDER: TodayProvider = local_today
-TRANSACTION_REPOSITORY = JsonTransactionRepository()
-TRANSACTION_SERVICE = TransactionService(
-    TRANSACTION_REPOSITORY,
+APPLICATION = build_json_application(
     today_provider=TRANSACTION_TODAY_PROVIDER,
-    account_lookup=partial(
-        get_account_by_id,
-        accounts_file=ACCOUNTS_FILE,
-    ),
-    category_lookup=partial(
-        get_category_by_id,
-        categories_file=CATEGORIES_FILE,
-        state_file=CATEGORY_STATE_FILE,
-    ),
 )
-TRANSACTION_ACTIVE_ACCOUNT_LIST = partial(
-    list_accounts,
-    accounts_file=ACCOUNTS_FILE,
-    active_only=True,
-)
-TRANSACTION_ACCOUNT_DISPLAY_LOOKUP = partial(
-    get_account_by_display_id,
-    accounts_file=ACCOUNTS_FILE,
-)
-TRANSACTION_ACTIVE_CATEGORY_LIST = partial(
-    list_categories,
-    categories_file=CATEGORIES_FILE,
-    state_file=CATEGORY_STATE_FILE,
-    active_only=True,
-)
-TRANSACTION_CATEGORY_DISPLAY_LOOKUP = partial(
-    get_category_by_display_id,
-    categories_file=CATEGORIES_FILE,
-    state_file=CATEGORY_STATE_FILE,
-)
-EXCEL_IMPORT_SERVICE = ExcelImportService(
-    TRANSACTION_SERVICE,
-    account_list=partial(
-        list_accounts,
-        accounts_file=ACCOUNTS_FILE,
-    ),
-    category_list=partial(
-        list_categories,
-        categories_file=CATEGORIES_FILE,
-        state_file=CATEGORY_STATE_FILE,
-    ),
-)
+ACCOUNT_SERVICE = APPLICATION.account_service
+CATEGORY_SERVICE = APPLICATION.category_service
+
+# Bound application operations keep the CLI handlers simple and independently
+# monkeypatchable while construction remains centralized in the factory.
+activate_account = ACCOUNT_SERVICE.activate_account
+add_account = ACCOUNT_SERVICE.add_account
+deactivate_account = ACCOUNT_SERVICE.deactivate_account
+get_account_by_display_id = APPLICATION.account_display_lookup
+get_account_by_id = APPLICATION.account_lookup
+list_accounts = APPLICATION.account_list
+rename_account = ACCOUNT_SERVICE.rename_account
+activate_category = CATEGORY_SERVICE.activate_category
+add_category = CATEGORY_SERVICE.add_category
+deactivate_category = CATEGORY_SERVICE.deactivate_category
+get_category_by_display_id = APPLICATION.category_display_lookup
+get_category_by_id = APPLICATION.category_lookup
+list_categories = APPLICATION.category_list
+rename_category = CATEGORY_SERVICE.rename_category
+
+TRANSACTION_SERVICE = APPLICATION.transaction_service
+TRANSACTION_ACTIVE_ACCOUNT_LIST = APPLICATION.active_account_list
+TRANSACTION_ACCOUNT_DISPLAY_LOOKUP = get_account_by_display_id
+TRANSACTION_ACTIVE_CATEGORY_LIST = APPLICATION.active_category_list
+TRANSACTION_CATEGORY_DISPLAY_LOOKUP = get_category_by_display_id
+EXCEL_IMPORT_SERVICE = APPLICATION.excel_import_service
 
 ManagedRecord = TypeVar("ManagedRecord", Account, Category)
 AccountList = Callable[[], list[Account]]
@@ -1056,7 +1018,7 @@ def handle_add_account() -> None:
 
 
 def handle_view_accounts() -> None:
-    accounts = load_accounts()
+    accounts = list_accounts()
     if not accounts:
         print("No accounts found.")
         return

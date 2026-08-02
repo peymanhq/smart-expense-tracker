@@ -15,7 +15,6 @@ from date_policy import (
 from transaction import Transaction
 from transaction_factory import create_transaction
 from transaction_repository import (
-    JsonTransactionRepository,
     RepositoryTransactionConflictError,
     RepositoryTransactionNotFoundError,
     TransactionDateSummary,
@@ -207,16 +206,14 @@ class TransactionService:
 
     def __init__(
         self,
-        repository: TransactionRepository | None = None,
+        repository: TransactionRepository,
         *,
         today_provider: TodayProvider = local_today,
         utc_now_provider: UtcNowProvider = utc_now,
         account_lookup: AccountLookup | None = None,
         category_lookup: CategoryLookup | None = None,
     ) -> None:
-        self._repository = (
-            JsonTransactionRepository() if repository is None else repository
-        )
+        self._repository = repository
         self._today_provider = today_provider
         self._utc_now_provider = utc_now_provider
         self._account_lookup = account_lookup
