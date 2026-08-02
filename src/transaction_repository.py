@@ -38,6 +38,10 @@ class TransactionRepository(Protocol):
         """Look up one transaction globally by display ID."""
         ...
 
+    def get_by_id(self, transaction_id: str) -> Transaction | None:
+        """Look up one transaction by its internal UUID."""
+        ...
+
     def list_all(self) -> list[Transaction]:
         """List every transaction as a detached in-memory collection."""
         ...
@@ -97,6 +101,38 @@ def _display_order(transaction: Transaction) -> tuple[int, str]:
     )
 
 
+def _validate_bulk_conflicts(
+    transactions: list[Transaction],
+    existing_transactions: list[Transaction],
+) -> None:
+    """Apply the backend-neutral managed-reference duplicate contract."""
+    existing_by_key = {
+        key: transaction
+        for transaction in existing_transactions
+        if (key := transaction_comparison_key(transaction)) is not None
+    }
+    batch_keys: dict[tuple, int] = {}
+    for index, transaction in enumerate(transactions):
+        key = transaction_comparison_key(transaction)
+        if key is None:
+            raise ValueError(
+                "Bulk transactions require managed Account and "
+                "Category references."
+            )
+        existing = existing_by_key.get(key)
+        if existing is not None:
+            raise RepositoryTransactionConflictError(
+                index,
+                matching_display_id=existing.display_id,
+            )
+        if key in batch_keys:
+            raise RepositoryTransactionConflictError(
+                index,
+                earlier_candidate_index=batch_keys[key],
+            )
+        batch_keys[key] = index
+
+
 class JsonTransactionRepository:
     """JSON implementation backed by the existing transaction document."""
 
@@ -134,31 +170,7 @@ class JsonTransactionRepository:
             return []
         with storage.transaction_file_lock(self._data_file):
             document, existing_transactions = self._read()
-            existing_by_key = {
-                key: transaction
-                for transaction in existing_transactions
-                if (key := transaction_comparison_key(transaction)) is not None
-            }
-            batch_keys: dict[tuple, int] = {}
-            for index, transaction in enumerate(transactions):
-                key = transaction_comparison_key(transaction)
-                if key is None:
-                    raise ValueError(
-                        "Bulk transactions require managed Account and "
-                        "Category references."
-                    )
-                existing = existing_by_key.get(key)
-                if existing is not None:
-                    raise RepositoryTransactionConflictError(
-                        index,
-                        matching_display_id=existing.display_id,
-                    )
-                if key in batch_keys:
-                    raise RepositoryTransactionConflictError(
-                        index,
-                        earlier_candidate_index=batch_keys[key],
-                    )
-                batch_keys[key] = index
+            _validate_bulk_conflicts(transactions, existing_transactions)
 
             next_number = document["metadata"]["next_display_id"]
             created_transactions = [
@@ -181,6 +193,19 @@ class JsonTransactionRepository:
     def get_by_display_id(self, display_id: str) -> Transaction | None:
         _, transactions = self._read()
         return find_transaction_by_display_id(transactions, display_id)
+
+    def get_by_id(self, transaction_id: str) -> Transaction | None:
+        if not isinstance(transaction_id, str):
+            return None
+        _, transactions = self._read()
+        return next(
+            (
+                transaction
+                for transaction in transactions
+                if transaction.id == transaction_id
+            ),
+            None,
+        )
 
     def list_all(self) -> list[Transaction]:
         _, transactions = self._read()

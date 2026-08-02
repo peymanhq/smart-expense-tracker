@@ -475,16 +475,16 @@ Amounts use SQLite `REAL` to preserve the application's current Python
 `float` behavior. Moving to decimal text or integer minor units requires a
 separate domain-level decision. Transaction dates use ISO `YYYY-MM-DD` text,
 and timestamps use canonical ISO-8601 UTC text. Full calendar, timestamp,
-and normalization validation remains in the validation/service layer and future
-repository conversion code rather than brittle SQL expressions. Version 1 does
-not claim SQL-level finite-number validation; tightening non-finite float
+and normalization validation remains in the validation/service layer and
+repository row-conversion code rather than brittle SQL expressions. Version 1
+does not claim SQL-level finite-number validation; tightening non-finite float
 behavior requires a separate application decision.
 
 Low-level SQLite failures are chained beneath backend-neutral `StorageError`
 exceptions. Unsupported versions use
 `UnsupportedSchemaVersionError`, which remains catchable as `StorageError`.
 
-### Account and Category Repository Adapters
+### SQLite Repository Adapters
 
 `SQLiteAccountRepository` and `SQLiteCategoryRepository` implement the existing
 backend-neutral protocols and receive an explicit `SQLiteDatabase`. Constructing
@@ -518,9 +518,14 @@ service-filter behavior against both JSON and SQLite adapters. SQLite-specific
 tests additionally cover schema lifecycle, corrupted-row detection, competing
 instances, lock translation, rollback, and counter atomicity.
 
-The next persistence milestone may implement `SQLiteTransactionRepository`
-against the existing Transaction protocol. Production activation, backend
-selection, and JSON migration remain separate work.
+`SQLiteTransactionRepository` implements the Transaction protocol while
+preserving snapshot fields and optional managed references. Single and bulk
+creation allocate `T-####` values and insert rows inside one `BEGIN IMMEDIATE`
+transaction. Bulk duplicate detection shares one backend-neutral comparison
+implementation with JSON, and every failed bulk write rolls back all rows and
+counter changes. Replacement preserves the stored UUID, display ID, and
+creation timestamp. Production activation, backend selection, and JSON
+migration remain separate work.
 
 ---
 

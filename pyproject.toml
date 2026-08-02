@@ -52,6 +52,7 @@ py-modules = [
     "sqlite_category_repository",
     "sqlite_database",
     "sqlite_schema",
+    "sqlite_transaction_repository",
     "storage",
     "transaction",
     "transaction_factory",
