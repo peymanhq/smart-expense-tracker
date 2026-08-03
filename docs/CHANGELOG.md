@@ -6,13 +6,16 @@ The format is based on **Keep a Changelog** and follows **Semantic Versioning**.
 
 ---
 
-## [Unreleased]
+## [1.5.0] - 2026-08-03
 
 ### Added
 
-- Backend-neutral application composition with explicit JSON or SQLite
-  selection while retaining JSON as the default
-- Opt-in SQLite startup through `SMART_EXPENSE_TRACKER_BACKEND=sqlite`
+- Backend-neutral application composition with SQLite as the default and JSON
+  available through an explicit compatibility override
+- Automatic first-start migration when JSON exists and the SQLite database does
+  not, with preserved JSON source files
+- Controlled startup failure for invalid legacy JSON instead of creating an
+  empty SQLite database
 - Non-destructive JSON-to-SQLite migration preserving entity identity,
   timestamps, managed references, and monotonic display-ID counters
 - Idempotent completed-migration detection and rejection of ambiguous non-empty
@@ -26,15 +29,16 @@ The format is based on **Keep a Changelog** and follows **Semantic Versioning**.
 
 - Wired all three completed SQLite repositories into the same Account,
   Category, Transaction, and Excel application services used by JSON
+- Made SQLite the default storage backend and reclassified JSON as an explicit
+  compatibility backend
 - Deferred backend initialization until CLI startup so importing `main` remains
   free of filesystem side effects
-- Advanced development package metadata to `1.5.0.dev0`
+- Finalized package metadata for the `1.5.0` release
 
 ### Documentation
 
-- Documented explicit SQLite selection, guarded one-time migration, current
-  limitations, backup/rollback runbook, architecture, verification, and
-  remaining cutover work
+- Documented SQLite-default startup, guarded one-time migration, current
+  limitations, backup/rollback runbook, architecture, and release verification
 
 ---
 

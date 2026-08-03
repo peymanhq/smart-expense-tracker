@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "smart-expense-tracker"
-version = "1.5.0.dev0"
+version = "1.5.0"
 description = "A command-line expense tracker with local JSON and SQLite storage."
 readme = "README.md"
 requires-python = ">=3.10"

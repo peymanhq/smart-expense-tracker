@@ -15,7 +15,9 @@ import account_storage
 import category_storage
 import main
 import storage
-
+from application import build_json_application
+from sqlite_database import SQLiteDatabase
+from sqlite_schema import initialize_schema
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PYPROJECT = PROJECT_ROOT / "pyproject.toml"
@@ -30,7 +32,7 @@ def test_project_metadata_declares_release_and_dependencies() -> None:
     project = load_pyproject()["project"]
 
     assert project["name"] == "smart-expense-tracker"
-    assert project["version"] == "1.5.0.dev0"
+    assert project["version"] == "1.5.0"
     assert project["requires-python"] == ">=3.10"
     assert project["dependencies"] == ["openpyxl>=3.1,<4.0"]
     assert project["optional-dependencies"]["dev"] == [
@@ -63,6 +65,7 @@ def test_console_entry_runs_existing_orchestration_and_exits(
     monkeypatch,
     capsys,
 ) -> None:
+    monkeypatch.setenv("SMART_EXPENSE_TRACKER_BACKEND", "json")
     monkeypatch.setattr("builtins.input", lambda _prompt: "0")
 
     main.main()
@@ -90,14 +93,15 @@ def test_importing_entry_module_does_not_start_cli(tmp_path) -> None:
     assert not (tmp_path / "data").exists()
 
 
-def test_sqlite_backend_is_opt_in_at_cli_start_without_import_side_effects(
+def test_sqlite_backend_is_default_at_cli_start_without_import_side_effects(
     tmp_path,
 ) -> None:
     environment = {
         **os.environ,
         "PYTHONPATH": str(PROJECT_ROOT / "src"),
-        "SMART_EXPENSE_TRACKER_BACKEND": "sqlite",
     }
+    environment.pop("SMART_EXPENSE_TRACKER_BACKEND", None)
+    environment.pop("SMART_EXPENSE_TRACKER_MIGRATE_JSON", None)
     imported = subprocess.run(
         [sys.executable, "-c", "import main"],
         cwd=tmp_path,
@@ -124,6 +128,83 @@ def test_sqlite_backend_is_opt_in_at_cli_start_without_import_side_effects(
     assert (tmp_path / "data" / "smart_expense_tracker.sqlite3").is_file()
 
 
+def test_json_backend_requires_explicit_compatibility_override(tmp_path) -> None:
+    result = subprocess.run(
+        [sys.executable, "-c", "import main; main.main()"],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "PYTHONPATH": str(PROJECT_ROOT / "src"),
+            "SMART_EXPENSE_TRACKER_BACKEND": "json",
+        },
+        input="0\n",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Storage backend: JSON" in result.stdout
+    assert not (tmp_path / "data").exists()
+
+
+def test_default_cli_reports_automatic_json_migration(tmp_path) -> None:
+    json_application = build_json_application(tmp_path)
+    account = json_application.account_service.add_account("Cash").account
+    assert account is not None
+    source_before = (tmp_path / "data" / "accounts.json").read_bytes()
+    environment = {
+        **os.environ,
+        "PYTHONPATH": str(PROJECT_ROOT / "src"),
+    }
+    environment.pop("SMART_EXPENSE_TRACKER_BACKEND", None)
+    environment.pop("SMART_EXPENSE_TRACKER_MIGRATE_JSON", None)
+
+    result = subprocess.run(
+        [sys.executable, "-c", "import main; main.main()"],
+        cwd=tmp_path,
+        env=environment,
+        input="0\n",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Existing JSON data migrated automatically" in result.stdout
+    assert "Storage backend: SQLITE" in result.stdout
+    assert (tmp_path / "data" / "accounts.json").read_bytes() == source_before
+    assert (tmp_path / "data" / "smart_expense_tracker.sqlite3").is_file()
+
+
+def test_existing_empty_database_reports_explicit_migration_guidance(
+    tmp_path,
+) -> None:
+    initialize_schema(SQLiteDatabase.for_workspace(tmp_path))
+    json_application = build_json_application(tmp_path)
+    assert json_application.account_service.add_account("Cash").account is not None
+    environment = {
+        **os.environ,
+        "PYTHONPATH": str(PROJECT_ROOT / "src"),
+    }
+    environment.pop("SMART_EXPENSE_TRACKER_BACKEND", None)
+    environment.pop("SMART_EXPENSE_TRACKER_MIGRATE_JSON", None)
+
+    result = subprocess.run(
+        [sys.executable, "-c", "import main; main.main()"],
+        cwd=tmp_path,
+        env=environment,
+        input="0\n",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "automatic JSON migration was skipped" in result.stdout
+    assert "SMART_EXPENSE_TRACKER_MIGRATE_JSON=1" in result.stdout
+
+
 def test_invalid_backend_configuration_fails_cleanly(tmp_path) -> None:
     result = subprocess.run(
         [sys.executable, "-c", "import main; main.main()"],
@@ -146,9 +227,7 @@ def test_invalid_backend_configuration_fails_cleanly(tmp_path) -> None:
 
 def test_all_flat_source_modules_are_declared_for_installation() -> None:
     configured_modules = set(load_pyproject()["tool"]["setuptools"]["py-modules"])
-    source_modules = {
-        path.stem for path in (PROJECT_ROOT / "src").glob("*.py")
-    }
+    source_modules = {path.stem for path in (PROJECT_ROOT / "src").glob("*.py")}
 
     assert configured_modules == source_modules
 
@@ -166,9 +245,7 @@ def test_default_runtime_paths_use_one_current_workspace(
         category_storage.CATEGORY_STATE_FILE,
     ]
 
-    assert [path.parent.resolve() for path in paths] == [
-        tmp_path / "data"
-    ] * len(paths)
+    assert [path.parent.resolve() for path in paths] == [tmp_path / "data"] * len(paths)
     assert [path.name for path in paths] == [
         "transactions.json",
         "accounts.json",

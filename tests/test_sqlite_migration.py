@@ -6,12 +6,16 @@ from uuid import uuid4
 
 import pytest
 
-from application import build_json_application, build_sqlite_application
+from application import (
+    build_application,
+    build_json_application,
+    build_sqlite_application,
+)
 from persistence_errors import StorageError
 from sqlite_account_repository import SQLiteAccountRepository
 from sqlite_category_repository import SQLiteCategoryRepository
 from sqlite_database import SQLiteDatabase
-from sqlite_migration import migrate_json_to_sqlite
+from sqlite_migration import json_workspace_exists, migrate_json_to_sqlite
 from sqlite_schema import initialize_schema
 from sqlite_transaction_repository import SQLiteTransactionRepository
 from transaction import Transaction
@@ -114,6 +118,43 @@ def test_migration_preserves_records_counters_and_json_files(tmp_path: Path) -> 
     assert created.display_id == "T-0003"
 
 
+def test_default_application_auto_migrates_only_when_database_is_missing(
+    tmp_path: Path,
+) -> None:
+    account, category, transaction = _populate_json_workspace(tmp_path)
+    original_json = _json_bytes(tmp_path)
+    assert json_workspace_exists(tmp_path) is True
+
+    application = build_application(
+        tmp_path,
+        today_provider=lambda: TODAY,
+        utc_now_provider=lambda: NOW,
+    )
+
+    assert isinstance(
+        application.transaction_service._repository,
+        SQLiteTransactionRepository,
+    )
+    assert application.account_list() == [account]
+    assert application.category_list() == [category]
+    assert application.transaction_service.list_transactions() == [transaction]
+    assert _json_bytes(tmp_path) == original_json
+
+
+def test_existing_database_suppresses_automatic_json_migration(
+    tmp_path: Path,
+) -> None:
+    database = SQLiteDatabase.for_workspace(tmp_path)
+    initialize_schema(database)
+    _populate_json_workspace(tmp_path)
+
+    application = build_application(tmp_path)
+
+    assert application.account_list() == []
+    assert application.category_list() == []
+    assert application.transaction_service.list_transactions() == []
+
+
 def test_identical_migration_is_idempotent(tmp_path: Path) -> None:
     _populate_json_workspace(tmp_path)
     migrate_json_to_sqlite(tmp_path)
@@ -194,5 +235,21 @@ def test_invalid_json_fails_before_database_creation(tmp_path: Path) -> None:
 
     with pytest.raises(StorageError, match="malformed JSON"):
         migrate_json_to_sqlite(tmp_path)
+
+    assert not (data_directory / "smart_expense_tracker.sqlite3").exists()
+
+
+def test_default_application_rejects_invalid_json_without_creating_database(
+    tmp_path: Path,
+) -> None:
+    data_directory = tmp_path / "data"
+    data_directory.mkdir()
+    (data_directory / "transactions.json").write_text(
+        "{broken",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(StorageError, match="malformed JSON"):
+        build_application(tmp_path)
 
     assert not (data_directory / "smart_expense_tracker.sqlite3").exists()

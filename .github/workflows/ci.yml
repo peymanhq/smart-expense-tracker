@@ -74,4 +74,4 @@ jobs:
           smoke_dir="$(mktemp -d)"
           cd "$smoke_dir"
           printf '0\n' | "$wheel_venv/bin/expense-tracker"
-          test ! -e data
+          test -f data/smart_expense_tracker.sqlite3

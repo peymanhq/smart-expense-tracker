@@ -179,13 +179,14 @@ transfers, and multiple currencies.
 
 ## Status
 
-In development (`1.5.0.dev0`).
+Released 2026-08-03 (`1.5.0`).
 
 ## Implemented Scope
 
 - SQLite implementations of all Account, Category, and Transaction repositories
-- Backend-neutral application composition with JSON as the default
-- Explicit opt-in SQLite selection at CLI startup
+- Backend-neutral application composition with SQLite as the default storage backend
+- Explicit JSON compatibility selection at CLI startup
+- Automatic migration when JSON files exist and the SQLite database does not
 - Import-safe backend configuration with no database creation on module import
 - Locked, validated JSON snapshot migration into one SQLite transaction
 - Preservation of UUIDs, display IDs, timestamps, managed references, and
@@ -198,12 +199,16 @@ In development (`1.5.0.dev0`).
 - Read-only migration rehearsal against the current workspace with complete
   cross-backend record equality and unchanged JSON source metadata
 
-## Remaining Before Default Cutover
+## Next Planned Version
 
-- Backup rotation, retention, and off-device storage policy
-- Release-level rollback policy
-- First SQLite schema-upgrade/migration framework
-- Decision to make SQLite the default backend
+v1.6.0
+
+Primary focus:
+
+- Telegram Bot MVP
+- Register income and expense from Telegram
+- Financial summary through Telegram
+- Excel export from Telegram
 
 ---
 
@@ -211,16 +216,14 @@ In development (`1.5.0.dev0`).
 
 ## Objectives
 
-Replace JSON as the primary storage engine.
+Harden and evolve the primary SQLite storage engine.
 
 ## Planned Work
 
-- Make SQLite the default database after the v1.5 opt-in period
 - Release automation for the documented migration and rollback workflow
 - Automated backup rotation, retention, and off-device policy
 - Schema upgrade migrations
 - Better search performance
-- Atomic transactions
 
 JSON will remain available as an import and export format.
 
@@ -234,10 +237,8 @@ Expand financial management capabilities.
 
 ## Planned Work
 
-- Multiple accounts
 - Transfers between accounts
 - Opening balances
-- Categories management
 - Tags
 - Better filtering
 

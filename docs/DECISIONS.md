@@ -118,7 +118,7 @@ Store transactions in JSON.
 
 Simple implementation.
 
-Migration to SQLite is planned for Version 2.
+SQLite became primary in v1.5.0; JSON remains available for compatibility.
 
 ---
 
@@ -130,7 +130,7 @@ SQLite will become the primary storage.
 
 ## Status
 
-Partially implemented; default cutover remains planned.
+Implemented in v1.5.0.
 
 ## Context
 
@@ -138,8 +138,8 @@ JSON has limitations for reliability and scalability.
 
 ## Decision
 
-SQLite will replace JSON as the default after an explicit opt-in and migration
-period. ADR-027 governs the current activation phase.
+SQLite replaces JSON as the default in v1.5. ADR-029 governs automatic
+first-start migration and explicit JSON compatibility.
 
 ## Consequences
 
@@ -158,7 +158,7 @@ Business logic must remain independent of the user interface.
 
 ## Status
 
-Accepted
+Superseded by ADR-029.
 
 ## Decision
 
@@ -587,8 +587,8 @@ still locked. Display IDs remain global across all financial dates.
 
 Deleted IDs are never reused. Concurrent creation does not lose records or
 duplicate display IDs. Duplicate identities and regressed counter state fail
-before replacement. Flat JSON storage is retained for this development
-version; SQLite remains planned.
+before replacement. At the time of this decision, flat JSON storage was
+retained and SQLite remained planned. ADR-029 later made SQLite primary.
 
 ---
 
@@ -894,9 +894,10 @@ ambiguous.
 
 ## Decision
 
-Keep JSON as the default for the v1.5 development period. Select SQLite only
-through `SMART_EXPENSE_TRACKER_BACKEND=sqlite` when the CLI starts. Importing
-the entry module must remain free of filesystem side effects.
+During the initial v1.5 transition phase, JSON remained the default and SQLite
+was selected explicitly. This transitional selection policy is superseded by
+ADR-029; its migration safety rules remain in force. Importing the entry module
+must remain free of filesystem side effects.
 
 Provide an explicit one-time migration through
 `SMART_EXPENSE_TRACKER_MIGRATE_JSON=1`. Acquire the existing Account, Category,
@@ -911,7 +912,7 @@ there is no implicit merge or overwrite.
 
 ## Consequences
 
-- Existing users retain unchanged behavior until they explicitly opt in.
+- Existing users retained unchanged behavior during the opt-in phase.
 - Migration preserves identity and deleted-ID gaps without trusting new ID
   allocation.
 - Foreign-key or uniqueness failures roll back every imported record and
@@ -920,8 +921,8 @@ there is no implicit merge or overwrite.
   to SQLite are not synchronized back to JSON.
 - Users must remove the one-time migration flag after cutover; later divergence
   is deliberately reported instead of overwritten.
-- Making SQLite the default requires separate backup, restore, rehearsal, and
-  release rollback decisions.
+- Backup, restore, and rehearsal prerequisites were completed before ADR-029
+  made SQLite primary.
 
 ---
 
@@ -937,8 +938,8 @@ Accepted
 
 ## Context
 
-Opt-in SQLite migration needs a recoverable operational path before default
-cutover. A plain filesystem copy can capture a database during an incomplete
+Primary SQLite storage needs a recoverable operational path. A plain filesystem
+copy can capture a database during an incomplete
 write, while restoring an unvalidated or wrong file can destroy a valid live
 workspace. Atomic path replacement also cannot redirect another process that
 already has the older database inode open.
@@ -968,3 +969,53 @@ the workspace must be stopped first.
   is not implemented.
 - Scheduling, retention, encryption, and off-device backup policy remain
   deployment responsibilities.
+
+---
+
+# ADR-029
+
+## Title
+
+Make SQLite primary and migrate an existing JSON workspace automatically.
+
+## Status
+
+Accepted
+
+## Context
+
+The repository adapters, guarded migration, backup, restore, and real-workspace
+rehearsal are complete. Requiring every existing user to discover and set two
+environment variables would make the safe migration path easy to miss, while
+starting an empty SQLite database beside existing JSON would make records appear
+lost.
+
+## Decision
+
+Select SQLite by default when the CLI starts. If the SQLite database path does
+not exist and any recognized JSON persistence file exists, automatically run
+the existing locked, all-or-nothing migration before composing services. Keep
+the JSON files unchanged. If validation or migration fails, stop startup and do
+not create an empty database.
+
+If the SQLite path already exists, initialize or validate that database without
+automatic JSON migration. This prevents implicit merging after cutover. A new
+workspace with neither persistence format initializes an empty SQLite schema.
+
+Retain JSON through `SMART_EXPENSE_TRACKER_BACKEND=json` as an explicit
+compatibility backend. Retain the explicit migration flag for controlled retry
+and recovery. Importing `main.py` remains free of filesystem side effects; the
+policy runs only when the CLI starts or a caller explicitly composes the default
+application.
+
+## Consequences
+
+- Normal `expense-tracker` startup uses SQLite without configuration.
+- Existing valid JSON workspaces move to SQLite automatically and retain their
+  original files as a rollback snapshot.
+- Malformed JSON produces a visible configuration error rather than silent
+  empty state.
+- Once SQLite receives new writes, preserved JSON is stale and is not a live
+  mirror.
+- Users needing legacy behavior must select the JSON compatibility backend
+  explicitly.

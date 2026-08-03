@@ -1,3 +1,37 @@
+# Smart Expense Tracker v1.5.0
+
+Released 2026-08-03.
+
+v1.5.0 makes SQLite the default storage backend while retaining JSON as an
+explicit compatibility backend. Existing valid JSON workspaces migrate
+automatically on first startup when no SQLite database exists.
+
+## Storage and Migration
+
+- Use SQLite by default through the same Account, Category, Transaction, and
+  Excel application-service boundaries.
+- Automatically validate and migrate existing JSON records and display-ID
+  counters without changing or deleting the JSON source files.
+- Stop startup on invalid legacy JSON instead of creating an empty database.
+- Keep JSON available explicitly through
+  `SMART_EXPENSE_TRACKER_BACKEND=json` for compatibility.
+
+## Backup and Restore
+
+- Create validated atomic SQLite backups with the installed
+  `expense-tracker-storage` command.
+- Restore a validated backup offline with explicit overwrite confirmation.
+- Preserve the live database when validation or atomic replacement fails.
+
+## Release Verification
+
+The v1.5.0 release suite contains 609 passing tests. Coverage includes all
+SQLite repositories, default and compatibility backend selection, automatic
+and explicit migration, rollback on migration failure, backup and restore,
+packaging, installed commands, Excel workflows, and all earlier behavior.
+
+---
+
 # Smart Expense Tracker v1.4.0
 
 Released 2026-07-27.

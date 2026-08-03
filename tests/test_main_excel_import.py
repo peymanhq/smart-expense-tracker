@@ -304,6 +304,7 @@ def test_main_menu_reaches_import_and_template_options(
             "9": lambda: calls.append("template"),
         },
     )
+    monkeypatch.setenv("SMART_EXPENSE_TRACKER_BACKEND", "json")
 
     main.main()
 

@@ -2,13 +2,13 @@
 
 ## Executive Summary
 
-Smart Expense Tracker v1.4.0 is released, and v1.5.0.dev0 is the current
-development line. The complete Account, Category, and Transaction repository
-set now supports both the default JSON backend and an explicit SQLite backend.
-SQLite composition and non-destructive JSON migration are integrated without
-changing the application-service or Excel workflow contracts. Validated atomic
-SQLite backup and explicitly confirmed offline restore are also available
-through a separate maintenance command.
+Smart Expense Tracker v1.5.0 is the current released version. SQLite is now
+the default storage backend, while JSON remains available through an explicit
+compatibility mode. The complete Account, Category, and Transaction repository
+set supports both storage backends through the same application-service layer.
+Automatic non-destructive JSON migration, validated SQLite backup, and offline
+restore are fully integrated without changing the application-service or Excel
+workflow contracts.
 
 The transaction path now has explicit boundaries:
 
@@ -16,8 +16,8 @@ The transaction path now has explicit boundaries:
 main.py
     -> TransactionService
     -> TransactionRepository
-    -> JsonTransactionRepository / storage.py
-       OR SQLiteTransactionRepository / SQLiteDatabase
+       ├── SQLiteTransactionRepository / SQLiteDatabase
+       └── JsonTransactionRepository / storage.py (compatibility mode)
 ```
 
 Excel import reaches the same transaction path after a separate workbook
@@ -38,7 +38,7 @@ search, and daily/range reports. Transaction mutations are locked, creation
 allocates display IDs atomically, and schema version 3 remains compatible with
 legacy transaction files.
 
-The current suite contains 603 passing tests. Persistence, migration,
+The current suite contains 609 passing tests. Persistence, migration,
 packaging, and Excel tests use temporary workspaces and do not modify runtime
 JSON data.
 
@@ -51,9 +51,9 @@ date starts from an injected today provider, lasts only for one Transaction
 Management session, and is not persisted.
 
 The CLI does not allocate transaction display IDs, generate timestamps, or
-access backend records directly. JSON remains the default. SQLite is selected
-at CLI startup through `SMART_EXPENSE_TRACKER_BACKEND=sqlite`; importing
-`main.py` still creates no data files.
+access backend records directly. SQLite is selected by default when the CLI
+starts; `SMART_EXPENSE_TRACKER_BACKEND=json` selects compatibility mode.
+Importing `main.py` still creates no data files.
 
 ### Application
 
@@ -165,16 +165,15 @@ record. Explicit unlinking and automatic migration of historical snapshot-only
 values remain future work.
 
 Account, Category, and Transaction data use separate files and locks under the
-default JSON backend, so cross-file referential integrity is deliberately soft.
-The opt-in SQLite backend enforces managed-reference foreign keys.
+JSON compatibility backend, so cross-file referential integrity is deliberately
+soft there. Primary SQLite storage enforces managed-reference foreign keys.
 
 ### Flat JSON Limits
 
 Locking prevents lost read-modify-write mutations, but every JSON transaction
-change still rewrites the whole file. SQLite is now usable as an explicit
-alternative with atomic SQL transactions and indexed queries. It is not yet the
-default, and schema upgrades, automated backups, and merge-style migration are
-not implemented.
+change still rewrites the whole file. SQLite is primary with atomic SQL
+transactions and indexed queries. Schema upgrades, automated backups, and
+merge-style migration are not implemented.
 
 ### Operational Recovery
 
@@ -232,12 +231,11 @@ Charts, PDF output, and exact-money migration remain deferred.
 
 Keep future work scoped and incremental:
 
-1. Define backup rotation/retention and release rollback policy before making
-   SQLite the default.
+1. Define backup rotation/retention and release rollback policy.
 2. Define exact-money representation and migration.
 3. Add a first SQLite schema-upgrade contract before schema version 2 exists.
 4. Consider linting, typing, and coverage policy as separately scoped tooling.
 
-Multiple accounts, multiple currencies, transfers, dashboards, a GUI, and
-external interfaces remain roadmap items and are not implemented by the
-date-based transaction feature.
+Multiple currencies, transfers, dashboards, a GUI, and external interfaces
+remain roadmap items and are not implemented by the date-based transaction
+feature.

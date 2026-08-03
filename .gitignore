@@ -25,3 +25,6 @@ data/*.lock
 
 # Generated reports
 exports/*.xlsx
+
+data/*.sqlite3
+data/*.sqlite3-*

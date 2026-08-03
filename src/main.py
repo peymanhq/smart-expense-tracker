@@ -7,7 +7,11 @@ from pathlib import Path
 from typing import TypeVar
 
 from account import Account
-from application import ApplicationServices, build_application
+from application import (
+    ApplicationServices,
+    build_application,
+    build_json_application,
+)
 from category import Category
 from clock import TodayProvider, local_today
 from date_policy import ValidatedDateQuery
@@ -36,6 +40,8 @@ from search import (
     find_transaction_by_display_id,
     search_transactions,
 )
+from sqlite_database import SQLiteDatabase
+from sqlite_migration import json_workspace_exists
 from transaction_service import (
     FutureTransactionDateError,
     TransactionActiveDateMismatchError,
@@ -48,7 +54,7 @@ from validators import validate_transaction_date, validate_transaction_type
 TRANSACTION_TODAY_PROVIDER: TodayProvider = local_today
 STORAGE_BACKEND_ENV = "SMART_EXPENSE_TRACKER_BACKEND"
 MIGRATE_JSON_ENV = "SMART_EXPENSE_TRACKER_MIGRATE_JSON"
-APPLICATION = build_application(
+APPLICATION = build_json_application(
     today_provider=TRANSACTION_TODAY_PROVIDER,
 )
 ACTIVE_STORAGE_BACKEND = "json"
@@ -133,18 +139,47 @@ def _environment_flag(name: str) -> bool:
 
 
 def configure_storage_from_environment() -> None:
-    """Apply the opt-in backend selection without import-time disk access."""
-    requested_backend = os.environ.get(STORAGE_BACKEND_ENV, "json")
+    """Select SQLite by default without import-time disk access."""
+    requested_backend = os.environ.get(STORAGE_BACKEND_ENV, "sqlite")
     normalized_backend = requested_backend.strip().casefold()
     migrate_json = _environment_flag(MIGRATE_JSON_ENV)
     if normalized_backend == ACTIVE_STORAGE_BACKEND and not migrate_json:
         return
+    sqlite_path = SQLiteDatabase.for_workspace().path
+    database_existed = sqlite_path.exists()
+    compatibility_json_exists = json_workspace_exists()
+    automatic_migration = (
+        normalized_backend == "sqlite"
+        and not migrate_json
+        and not database_existed
+        and compatibility_json_exists
+    )
     application = build_application(
         backend=requested_backend,
         migrate_json=migrate_json,
         today_provider=TRANSACTION_TODAY_PROVIDER,
     )
     _bind_application(application, normalized_backend)
+    if automatic_migration:
+        print(
+            "Existing JSON data migrated automatically to SQLite; "
+            "source JSON files were preserved."
+        )
+    elif migrate_json:
+        print("Explicit JSON-to-SQLite migration completed.")
+    elif (
+        normalized_backend == "sqlite"
+        and database_existed
+        and compatibility_json_exists
+        and not application.account_list()
+        and not application.category_list()
+        and not application.transaction_service.list_transactions()
+    ):
+        print(
+            "SQLite database already exists and is empty; automatic JSON "
+            "migration was skipped. To import compatibility data explicitly, "
+            f"set {MIGRATE_JSON_ENV}=1 for one startup."
+        )
 
 ManagedRecord = TypeVar("ManagedRecord", Account, Category)
 AccountList = Callable[[], list[Account]]

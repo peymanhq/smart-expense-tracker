@@ -24,6 +24,14 @@ from storage import (
 )
 from transaction import Transaction
 
+JSON_WORKSPACE_FILENAMES = (
+    "accounts.json",
+    "accounts_state.json",
+    "categories.json",
+    "categories_state.json",
+    "transactions.json",
+)
+
 
 @dataclass(frozen=True)
 class SQLiteMigrationResult:
@@ -50,6 +58,14 @@ def _data_path(workspace_root: Path | str | None, filename: str) -> Path:
         else Path(workspace_root) / "data"
     )
     return directory / filename
+
+
+def json_workspace_exists(workspace_root: Path | str | None = None) -> bool:
+    """Return whether any persisted JSON compatibility file exists."""
+    return any(
+        _data_path(workspace_root, filename).exists()
+        for filename in JSON_WORKSPACE_FILENAMES
+    )
 
 
 @contextmanager

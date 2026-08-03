@@ -16,7 +16,7 @@ from excel_import_service import ExcelImportService
 from sqlite_account_repository import SQLiteAccountRepository
 from sqlite_category_repository import SQLiteCategoryRepository
 from sqlite_database import SQLiteDatabase
-from sqlite_migration import migrate_json_to_sqlite
+from sqlite_migration import json_workspace_exists, migrate_json_to_sqlite
 from sqlite_schema import initialize_schema
 from sqlite_transaction_repository import SQLiteTransactionRepository
 from transaction_repository import (
@@ -144,10 +144,16 @@ def build_sqlite_application(
     today_provider: TodayProvider = local_today,
     utc_now_provider: UtcNowProvider = utc_now,
     migrate_json: bool = False,
+    auto_migrate_json: bool = True,
 ) -> ApplicationServices:
-    """Compose services for SQLite, optionally importing JSON exactly once."""
+    """Compose SQLite services with guarded first-start JSON migration."""
     database = SQLiteDatabase.for_workspace(workspace_root)
-    if migrate_json:
+    should_auto_migrate = (
+        auto_migrate_json
+        and not database.path.exists()
+        and json_workspace_exists(workspace_root)
+    )
+    if migrate_json or should_auto_migrate:
         migrate_json_to_sqlite(workspace_root, database=database)
     else:
         initialize_schema(database)
@@ -163,12 +169,13 @@ def build_sqlite_application(
 def build_application(
     workspace_root: Path | str | None = None,
     *,
-    backend: str = "json",
+    backend: str = "sqlite",
     migrate_json: bool = False,
+    auto_migrate_json: bool = True,
     today_provider: TodayProvider = local_today,
     utc_now_provider: UtcNowProvider = utc_now,
 ) -> ApplicationServices:
-    """Compose one explicitly selected backend; JSON remains the default."""
+    """Compose one backend; SQLite is primary and JSON is compatibility."""
     if not isinstance(backend, str):
         raise ValueError("Storage backend must be json or sqlite.")
     normalized_backend = backend.strip().casefold()
@@ -189,4 +196,5 @@ def build_application(
     }
     if normalized_backend == "sqlite":
         options["migrate_json"] = migrate_json
+        options["auto_migrate_json"] = auto_migrate_json
     return builder(workspace_root, **options)

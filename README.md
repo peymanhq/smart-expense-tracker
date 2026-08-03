@@ -1,20 +1,16 @@
 # Smart Expense Tracker
 
 Smart Expense Tracker is a local command-line application for recording
-income and expenses. JSON remains the default storage backend, and the v1.5
-development line adds opt-in SQLite storage with non-destructive JSON migration.
+income and expenses. Starting with v1.5.0, SQLite is the default storage
+backend, with automatic non-destructive migration from existing JSON
+workspaces and an explicit JSON compatibility mode.
 
 ## Version status
 
-**Smart Expense Tracker v1.4.0** is the current released version. It includes
-Account Management, Category Management, Date-based Transaction Management,
-managed Account/Category selection, Excel reporting, standards-based
-packaging, an installed CLI command, continuous integration, defensive Excel
-transaction import, and a guided workspace-aware import template.
-
-**v1.5.0.dev0** is the current development version. It adds complete SQLite
-repository composition, explicit backend selection, and all-or-nothing JSON to
-SQLite migration while retaining JSON as the safe default.
+**Smart Expense Tracker v1.5.0** is the current released version. It uses
+SQLite as the default storage backend, automatically migrates valid legacy JSON
+data on first startup when no SQLite database exists, and keeps JSON available
+through an explicit compatibility override.
 
 ## Features
 
@@ -31,10 +27,9 @@ SQLite migration while retaining JSON as the safe default.
 - Generate a guided Excel import template from active Accounts and Categories
 - Validate, preview, and atomically import new transactions from `.xlsx`
 - Validate amounts, dates, transaction types, and required fields
-- Persist data locally in JSON
+- Persist data locally in SQLite by default
 - Keep an internal UUID separate from the user-facing display ID
 - Write JSON atomically to reduce the risk of partial-file corruption
-- Opt in to SQLite with database-level transactions and foreign keys
 - Migrate validated JSON data to SQLite without modifying the JSON source
 
 ## Project structure
@@ -42,7 +37,7 @@ SQLite migration while retaining JSON as the safe default.
 ```text
 smart-expense-tracker/
 ├── .github/workflows/ci.yml # Automated test and build quality gates
-├── data/                    # Runtime JSON data (created when needed)
+├── data/                    # Workspace SQLite or compatibility JSON data
 ├── pyproject.toml           # Canonical packaging and dependency metadata
 ├── src/
 │   ├── main.py              # CLI and workflow orchestration
@@ -122,8 +117,9 @@ The direct development workflow remains available from the repository root:
 python3 src/main.py
 ```
 
-Runtime JSON is resolved from `data/` beneath the current working directory.
-Run the command from the workspace whose data you intend to use. This preserves
+Runtime data is resolved from `data/` beneath the current working directory.
+SQLite is primary; compatibility JSON files use the same directory. Run the
+command from the workspace whose data you intend to use. This preserves
 the repository-root workflow and prevents an installed wheel from writing data
 inside site-packages or a virtual environment. Default Excel output similarly
 uses `exports/` beneath the current working directory.
@@ -134,15 +130,26 @@ directories, so the earlier records will appear missing until the command is
 run again from `Documents`. Use one consistent workspace directory for normal
 operation.
 
-## Optional SQLite backend
+## Storage backends
 
-JSON remains the default. To start a new workspace with SQLite explicitly:
+SQLite is the default. Start normally to create or open
+`data/smart_expense_tracker.sqlite3` in the current workspace:
 
 ```bash
-SMART_EXPENSE_TRACKER_BACKEND=sqlite expense-tracker
+expense-tracker
 ```
 
-To migrate an existing workspace on the first SQLite run:
+If the SQLite database does not exist but any recognized JSON persistence file
+does, startup validates and migrates the JSON workspace automatically. UUIDs,
+display IDs, timestamps, managed references, and next-ID counters are preserved;
+the source JSON files are not changed or deleted. A malformed JSON source stops
+startup instead of silently creating an empty database.
+
+Automatic migration runs only when the SQLite database path does not exist. An
+existing empty database suppresses automation; when compatibility JSON also
+exists, the CLI prints the exact explicit-migration setting instead of silently
+presenting the situation as complete. An explicit migration command remains
+available for controlled recovery or an immediate retry:
 
 ```bash
 SMART_EXPENSE_TRACKER_BACKEND=sqlite \
@@ -158,10 +165,15 @@ previous completed migration. After migration, omit
 `SMART_EXPENSE_TRACKER_MIGRATE_JSON`; otherwise later SQLite changes will
 correctly make the stale JSON snapshot differ and migration will be refused.
 
-The SQLite database is stored at
-`data/smart_expense_tracker.sqlite3` in the selected workspace. Switching
-backends selects independent live stores; keep the backend setting consistent
-after cutover.
+Use the JSON repository only as an explicit compatibility backend:
+
+```bash
+SMART_EXPENSE_TRACKER_BACKEND=json expense-tracker
+```
+
+Switching backends selects independent live stores. After SQLite receives new
+writes, preserved JSON is a stale compatibility snapshot rather than a live
+mirror.
 
 ### SQLite backup and rollback runbook
 
@@ -336,8 +348,7 @@ python -m pytest -q
 ```
 
 Tests use pytest temporary paths and do not write to application data files.
-The current v1.5 development suite contains 603 passing tests.
-
+The v1.5.0 release verification suite contains 609 passing tests.
 Compile the source and verify whitespace:
 
 ```bash
@@ -354,9 +365,10 @@ python -m build
 GitHub Actions runs these test, compile, whitespace, build, and installed-command
 checks on Python 3.10 and 3.13 for changes targeting `main`.
 
-## JSON persistence
+## JSON compatibility persistence
 
-Runtime data is stored in `data/transactions.json`. The stabilized format is:
+When the explicit JSON compatibility backend is selected, transaction data is
+stored in `data/transactions.json`. The stabilized format is:
 
 ```json
 {
@@ -451,21 +463,22 @@ ID. If state is missing, it is recovered from the highest stored category ID.
 - No authentication or synchronization
 - Transactions use managed Account and Category selection in the CLI, but
   explicit unlinking and automatic legacy reconciliation are not implemented
-- Referential integrity remains soft when the default JSON backend is used;
-  SQLite enforces managed foreign keys when selected
+- Referential integrity remains soft when the JSON compatibility backend is
+  selected; primary SQLite storage enforces managed foreign keys
 - Transfers are not implemented
 - Transaction amounts still use `float`; exact `Decimal` money is deferred
 
-## Current release
+## Release history
 
-v1.4.0 adds defensive `.xlsx` transaction import, duplicate-safe
-all-or-nothing bulk persistence, financial preview, new generated identity,
-and a guided workspace-aware template with Type-dependent Category dropdowns.
-Exact-money migration, visualization, currency, default SQLite cutover,
-Telegram, and GUI work remain separate roadmap scope.
+### v1.5.0
 
-The v1.5 development line makes the completed SQLite repositories usable as an
-explicit opt-in backend and supplies non-destructive migration. JSON-to-SQLite
-cutover remains user-controlled; automatic default-backend switching, backup
-rotation/retention, and SQLite schema upgrades are not part of this development
-step.
+- SQLite is now the default storage backend.
+- Automatic migration from legacy JSON workspaces.
+- Atomic backup and restore.
+- Complete SQLite repository implementation.
+
+### v1.4.0
+
+- Excel import.
+- Excel template generation.
+- Safer workbook validation.

@@ -18,6 +18,7 @@ def test_main_menu_dispatch_opens_category_management(monkeypatch) -> None:
 
     monkeypatch.setattr(builtins, "input", lambda prompt: next(choices))
     monkeypatch.setitem(main.MENU_ACTIONS, "6", fake_category_menu)
+    monkeypatch.setenv("SMART_EXPENSE_TRACKER_BACKEND", "json")
 
     main.main()
 

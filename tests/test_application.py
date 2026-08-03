@@ -81,7 +81,7 @@ def test_composition_builds_initialized_sqlite_services(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("backend", ["json", " JSON "])
-def test_generic_composition_keeps_json_as_default_and_normalizes_backend(
+def test_generic_composition_supports_explicit_json_compatibility_backend(
     tmp_path: Path,
     backend: str,
 ) -> None:
@@ -93,10 +93,10 @@ def test_generic_composition_keeps_json_as_default_and_normalizes_backend(
     assert not (tmp_path / "data").exists()
 
 
-def test_generic_composition_selects_sqlite_and_rejects_invalid_options(
+def test_generic_composition_defaults_to_sqlite_and_rejects_invalid_options(
     tmp_path: Path,
 ) -> None:
-    application = build_application(tmp_path, backend="SQLITE")
+    application = build_application(tmp_path)
     assert isinstance(
         application.transaction_service._repository,
         SQLiteTransactionRepository,
@@ -104,7 +104,7 @@ def test_generic_composition_selects_sqlite_and_rejects_invalid_options(
     with pytest.raises(ValueError, match="Unsupported storage backend"):
         build_application(tmp_path, backend="postgres")
     with pytest.raises(ValueError, match="only valid with the sqlite"):
-        build_application(tmp_path, migrate_json=True)
+        build_application(tmp_path, backend="json", migrate_json=True)
 
 
 def test_main_consumes_the_composed_application_dependencies() -> None:

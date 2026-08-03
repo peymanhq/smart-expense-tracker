@@ -167,9 +167,10 @@ and wheel, installs that wheel into a clean temporary environment, confirms
 workspace. Release verification repeats the clean wheel installation and
 verifies imports from outside the repository.
 
-The v1.5 development CI contract also verifies that
+The v1.5.0 release CI contract also verifies that
 `expense-tracker-storage` is installed and its argument parser starts from the
-built wheel.
+built wheel. The installed main command starts with SQLite by default and
+creates a valid workspace database during the clean smoke test.
 
 ---
 
@@ -223,20 +224,27 @@ single-page-width Instructions, Transactions, and Reference Data layouts.
 
 ---
 
-# v1.5.0 Development Result
+# v1.5.0 Release Result
 
-The current SQLite activation suite completes successfully:
+The v1.5.0 release suite completes successfully:
 
 ```text
-603 passed
+609 passed
 ```
 
-Additional coverage verifies backend-neutral composition, JSON-default
-behavior, explicit SQLite CLI selection, import-time filesystem safety,
+Additional coverage verifies backend-neutral composition, SQLite-default
+behavior, explicit JSON compatibility selection, import-time filesystem safety,
 preservation of records and display-ID counters during migration, unchanged
 JSON source bytes, idempotent retry, rejection of divergent destinations,
 foreign-key failure rollback, invalid-source failure before database creation,
 and controlled invalid backend configuration.
+
+Default-startup coverage verifies automatic migration only when the SQLite path
+is absent, unchanged JSON source bytes, visible migration reporting, clean
+SQLite initialization for new workspaces, suppression when a database already
+exists, and controlled refusal of malformed JSON without creating an empty
+database. An existing empty database beside JSON also produces explicit
+migration guidance without importing implicitly.
 
 Backup and recovery coverage additionally verifies complete database and
 display-ID counter restoration, unchanged live sources during backup, existing

@@ -10,7 +10,7 @@ The long-term objective is to build a maintainable, testable, and extensible fin
 
 ---
 
-## Current Architecture (v1.5.0 development)
+## Current Architecture (v1.5.0)
 
 The current application follows this structure:
 
@@ -20,7 +20,7 @@ User
   ▼
 main.py
   │
-  ├── application.py (JSON default / SQLite opt-in)
+  ├── application.py (SQLite primary / JSON compatibility)
   │     ├── account_service.py
   │     │     └── account_repository.py
   │     ├── category_service.py
@@ -63,9 +63,9 @@ main.py
 | `category_storage.py` | Validated, locked category-list and counter persistence |
 | `json_storage.py` | Shared atomic JSON writing |
 | `persistence_errors.py` | Backend-neutral persistence failure exposed to orchestration |
-| `sqlite_account_repository.py` | Opt-in SQLite implementation of the Account repository protocol |
-| `sqlite_category_repository.py` | Opt-in SQLite implementation of the Category repository protocol |
-| `sqlite_transaction_repository.py` | Opt-in SQLite implementation of the Transaction repository protocol |
+| `sqlite_account_repository.py` | Primary SQLite implementation of the Account repository protocol |
+| `sqlite_category_repository.py` | Primary SQLite implementation of the Category repository protocol |
+| `sqlite_transaction_repository.py` | Primary SQLite implementation of the Transaction repository protocol |
 | `sqlite_database.py` | SQLite path, connection, and transaction foundation |
 | `sqlite_schema.py` | SQLite schema version 1 initialization and validation |
 | `sqlite_migration.py` | Non-destructive, all-or-nothing JSON snapshot migration |
@@ -90,7 +90,7 @@ main.py
 
 `main.py` owns terminal interaction and date-workspace session state.
 `application.py` owns dependency construction for both supported backends.
-`build_application()` keeps JSON as the default and normalizes an explicit
+`build_application()` selects SQLite by default and normalizes an explicit
 `json` or `sqlite` choice. Application services coordinate workflows without
 terminal, JSON, or SQLite access.
 The Account, Category, and Transaction repository protocols isolate the
@@ -308,7 +308,7 @@ the selected UUID and transaction-type compatibility.
 
 ---
 
-## JSON Persistence
+## JSON Compatibility Persistence
 
 The current document structure is:
 
@@ -409,13 +409,21 @@ functions into a service.
 
 ---
 
-## SQLite Persistence Foundation
+## SQLite Persistence
 
 SQLite infrastructure and all three repository adapters are available through
-`build_sqlite_application()`. JSON remains the production default;
-`SMART_EXPENSE_TRACKER_BACKEND=sqlite` selects SQLite only when the CLI starts.
-The entry module still performs no SQLite initialization merely by being
-imported. Services remain backend-neutral.
+`build_sqlite_application()`. SQLite is the primary backend when the CLI starts;
+`SMART_EXPENSE_TRACKER_BACKEND=json` selects the compatibility backend. The
+entry module still performs no SQLite initialization merely by being imported.
+Services remain backend-neutral.
+
+On first startup, if the SQLite database path does not exist and any recognized
+JSON persistence file exists, composition automatically invokes the locked
+JSON-to-SQLite migration. Invalid JSON stops startup before database creation.
+An existing SQLite path suppresses automatic migration, preventing repeated or
+ambiguous merging. If that database is empty while JSON files exist, startup
+prints explicit migration guidance. A new workspace with neither backend
+initializes an empty SQLite schema.
 
 `SMART_EXPENSE_TRACKER_MIGRATE_JSON=1` requests a one-time migration alongside
 the SQLite selection. Migration acquires the three established JSON locks in a
@@ -538,8 +546,8 @@ creation allocate `T-####` values and insert rows inside one `BEGIN IMMEDIATE`
 transaction. Bulk duplicate detection shares one backend-neutral comparison
 implementation with JSON, and every failed bulk write rolls back all rows and
 counter changes. Replacement preserves the stored UUID, display ID, and
-creation timestamp. Production composition, explicit backend selection, and
-guarded JSON migration are implemented. Making SQLite the default, automated
+creation timestamp. Primary SQLite composition, compatibility backend
+selection, and guarded automatic JSON migration are implemented. Automated
 backup scheduling/retention, merge-style migration, and schema upgrades remain
 separate work.
 
@@ -578,9 +586,8 @@ Management use separate persistence and connect to transactions only through
 service query APIs and optional UUID references.
 
 Both backends implement the same three repository protocols and reuse the same
-managed-record business rules, Excel services, and CLI workflows. A future
-default-backend cutover therefore requires release and operational policy
-rather than changes to service business logic.
+managed-record business rules, Excel services, and CLI workflows. JSON remains
+available for compatibility without affecting primary SQLite behavior.
 
 ---
 
@@ -748,14 +755,14 @@ These integrations must reuse existing application services instead of implement
 
 ### Current
 
-- JSON
+- SQLite (Primary)
+- JSON (Compatibility)
+- Excel (Import / Export)
 
 ### Planned
 
-- SQLite (Primary)
 - JSON (Import / Export)
 - CSV (Export)
-- Excel (Export)
 
 ---
 
@@ -776,7 +783,6 @@ Core business logic should be testable without requiring user input or file acce
 
 The long-term architecture should support:
 
-- Multiple accounts
 - Multiple currencies
 - Budgets
 - Recurring transactions
