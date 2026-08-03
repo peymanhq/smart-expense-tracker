@@ -25,7 +25,7 @@ automatically on first startup when no SQLite database exists.
 
 ## Release Verification
 
-The v1.5.0 release suite contains 609 passing tests. Coverage includes all
+The v1.5.0 release suite contains 610 passing tests. Coverage includes all
 SQLite repositories, default and compatibility backend selection, automatic
 and explicit migration, rollback on migration failure, backup and restore,
 packaging, installed commands, Excel workflows, and all earlier behavior.

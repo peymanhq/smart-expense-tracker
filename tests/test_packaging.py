@@ -21,6 +21,7 @@ from sqlite_schema import initialize_schema
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PYPROJECT = PROJECT_ROOT / "pyproject.toml"
+CI_WORKFLOW = PROJECT_ROOT / ".github" / "workflows" / "ci.yml"
 
 
 def load_pyproject() -> dict:
@@ -230,6 +231,14 @@ def test_all_flat_source_modules_are_declared_for_installation() -> None:
     source_modules = {path.stem for path in (PROJECT_ROOT / "src").glob("*.py")}
 
     assert configured_modules == source_modules
+
+
+def test_ci_whitespace_check_handles_unreachable_push_base() -> None:
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+
+    assert 'git cat-file -e "$EVENT_BEFORE^{commit}"' in workflow
+    assert "git diff-tree --check --root -r HEAD" in workflow
+    assert 'git diff --check "$EVENT_BEFORE..HEAD"' in workflow
 
 
 def test_default_runtime_paths_use_one_current_workspace(

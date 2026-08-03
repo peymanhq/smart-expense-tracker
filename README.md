@@ -348,7 +348,7 @@ python -m pytest -q
 ```
 
 Tests use pytest temporary paths and do not write to application data files.
-The v1.5.0 release verification suite contains 609 passing tests.
+The v1.5.0 release verification suite contains 610 passing tests.
 Compile the source and verify whitespace:
 
 ```bash

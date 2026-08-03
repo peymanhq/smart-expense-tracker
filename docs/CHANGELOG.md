@@ -35,6 +35,11 @@ The format is based on **Keep a Changelog** and follows **Semantic Versioning**.
   free of filesystem side effects
 - Finalized package metadata for the `1.5.0` release
 
+### Fixed
+
+- Kept the CI whitespace gate operational after a force-push makes the
+  previous push SHA unreachable in the checkout
+
 ### Documentation
 
 - Documented SQLite-default startup, guarded one-time migration, current

@@ -38,7 +38,7 @@ search, and daily/range reports. Transaction mutations are locked, creation
 allocates display IDs atomically, and schema version 3 remains compatible with
 legacy transaction files.
 
-The current suite contains 609 passing tests. Persistence, migration,
+The current suite contains 610 passing tests. Persistence, migration,
 packaging, and Excel tests use temporary workspaces and do not modify runtime
 JSON data.
 

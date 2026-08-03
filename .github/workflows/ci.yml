@@ -53,7 +53,8 @@ jobs:
         run: |
           if [[ "$EVENT_NAME" == "pull_request" ]]; then
             git diff --check "$PR_BASE_SHA...HEAD"
-          elif [[ "$EVENT_BEFORE" =~ ^0+$ ]]; then
+          elif [[ -z "$EVENT_BEFORE" || "$EVENT_BEFORE" =~ ^0+$ ]] || \
+               ! git cat-file -e "$EVENT_BEFORE^{commit}" 2>/dev/null; then
             git diff-tree --check --root -r HEAD
           else
             git diff --check "$EVENT_BEFORE..HEAD"

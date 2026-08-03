@@ -172,6 +172,10 @@ The v1.5.0 release CI contract also verifies that
 built wheel. The installed main command starts with SQLite by default and
 creates a valid workspace database during the clean smoke test.
 
+For push events, the whitespace gate checks the complete available event range
+and falls back to the current commit when a force-push makes the previous SHA
+unreachable.
+
 ---
 
 # v1.4.0 Release Result
@@ -229,7 +233,7 @@ single-page-width Instructions, Transactions, and Reference Data layouts.
 The v1.5.0 release suite completes successfully:
 
 ```text
-609 passed
+610 passed
 ```
 
 Additional coverage verifies backend-neutral composition, SQLite-default
