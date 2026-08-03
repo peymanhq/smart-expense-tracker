@@ -69,6 +69,8 @@ jobs:
           "$wheel_venv/bin/python" -m pip install dist/*.whl
           "$wheel_venv/bin/python" -c "import main; assert callable(main.main)"
           test -x "$wheel_venv/bin/expense-tracker"
+          test -x "$wheel_venv/bin/expense-tracker-storage"
+          "$wheel_venv/bin/expense-tracker-storage" --help
           smoke_dir="$(mktemp -d)"
           cd "$smoke_dir"
           printf '0\n' | "$wheel_venv/bin/expense-tracker"

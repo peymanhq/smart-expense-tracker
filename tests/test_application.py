@@ -7,7 +7,12 @@ import pytest
 
 import account_service
 from account_repository import JsonAccountRepository
-from application import ApplicationServices, build_json_application
+from application import (
+    ApplicationServices,
+    build_application,
+    build_json_application,
+    build_sqlite_application,
+)
 import category_service
 from category_repository import JsonCategoryRepository
 from json_storage import StorageError as JsonStorageError
@@ -15,6 +20,9 @@ import main
 from persistence_errors import StorageError
 import storage
 from transaction_repository import JsonTransactionRepository
+from sqlite_account_repository import SQLiteAccountRepository
+from sqlite_category_repository import SQLiteCategoryRepository
+from sqlite_transaction_repository import SQLiteTransactionRepository
 import transaction_service
 from transaction_service import TransactionService
 
@@ -52,6 +60,51 @@ def test_composition_builds_json_services_without_creating_files(
         application.transaction_service
     )
     assert not (tmp_path / "data").exists()
+
+
+def test_composition_builds_initialized_sqlite_services(tmp_path: Path) -> None:
+    application = build_sqlite_application(tmp_path)
+
+    assert isinstance(
+        application.account_service._repository,
+        SQLiteAccountRepository,
+    )
+    assert isinstance(
+        application.category_service._repository,
+        SQLiteCategoryRepository,
+    )
+    assert isinstance(
+        application.transaction_service._repository,
+        SQLiteTransactionRepository,
+    )
+    assert (tmp_path / "data" / "smart_expense_tracker.sqlite3").is_file()
+
+
+@pytest.mark.parametrize("backend", ["json", " JSON "])
+def test_generic_composition_keeps_json_as_default_and_normalizes_backend(
+    tmp_path: Path,
+    backend: str,
+) -> None:
+    application = build_application(tmp_path, backend=backend)
+    assert isinstance(
+        application.transaction_service._repository,
+        JsonTransactionRepository,
+    )
+    assert not (tmp_path / "data").exists()
+
+
+def test_generic_composition_selects_sqlite_and_rejects_invalid_options(
+    tmp_path: Path,
+) -> None:
+    application = build_application(tmp_path, backend="SQLITE")
+    assert isinstance(
+        application.transaction_service._repository,
+        SQLiteTransactionRepository,
+    )
+    with pytest.raises(ValueError, match="Unsupported storage backend"):
+        build_application(tmp_path, backend="postgres")
+    with pytest.raises(ValueError, match="only valid with the sqlite"):
+        build_application(tmp_path, migrate_json=True)
 
 
 def test_main_consumes_the_composed_application_dependencies() -> None:

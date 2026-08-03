@@ -8,7 +8,33 @@ The format is based on **Keep a Changelog** and follows **Semantic Versioning**.
 
 ## [Unreleased]
 
-No changes yet.
+### Added
+
+- Backend-neutral application composition with explicit JSON or SQLite
+  selection while retaining JSON as the default
+- Opt-in SQLite startup through `SMART_EXPENSE_TRACKER_BACKEND=sqlite`
+- Non-destructive JSON-to-SQLite migration preserving entity identity,
+  timestamps, managed references, and monotonic display-ID counters
+- Idempotent completed-migration detection and rejection of ambiguous non-empty
+  SQLite destinations
+- Migration rollback coverage for invalid references and destination conflicts
+- Installed `expense-tracker-storage` command for validated atomic SQLite backup
+  and explicitly confirmed offline restore
+- Backup/restore failure recovery, destination protection, and CLI coverage
+
+### Changed
+
+- Wired all three completed SQLite repositories into the same Account,
+  Category, Transaction, and Excel application services used by JSON
+- Deferred backend initialization until CLI startup so importing `main` remains
+  free of filesystem side effects
+- Advanced development package metadata to `1.5.0.dev0`
+
+### Documentation
+
+- Documented explicit SQLite selection, guarded one-time migration, current
+  limitations, backup/rollback runbook, architecture, verification, and
+  remaining cutover work
 
 ---
 

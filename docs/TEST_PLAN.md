@@ -167,6 +167,10 @@ and wheel, installs that wheel into a clean temporary environment, confirms
 workspace. Release verification repeats the clean wheel installation and
 verifies imports from outside the repository.
 
+The v1.5 development CI contract also verifies that
+`expense-tracker-storage` is installed and its argument parser starts from the
+built wheel.
+
 ---
 
 # v1.4.0 Release Result
@@ -216,6 +220,34 @@ The additional coverage verifies:
 All generated workbooks and JSON documents use pytest temporary paths. A
 manual visual pass renders the three template sheets and verifies unclipped,
 single-page-width Instructions, Transactions, and Reference Data layouts.
+
+---
+
+# v1.5.0 Development Result
+
+The current SQLite activation suite completes successfully:
+
+```text
+603 passed
+```
+
+Additional coverage verifies backend-neutral composition, JSON-default
+behavior, explicit SQLite CLI selection, import-time filesystem safety,
+preservation of records and display-ID counters during migration, unchanged
+JSON source bytes, idempotent retry, rejection of divergent destinations,
+foreign-key failure rollback, invalid-source failure before database creation,
+and controlled invalid backend configuration.
+
+Backup and recovery coverage additionally verifies complete database and
+display-ID counter restoration, unchanged live sources during backup, existing
+destination protection, mandatory restore confirmation, invalid backup
+rejection before live replacement, failed atomic-replace cleanup, missing-source
+behavior, and the installed maintenance command contract.
+
+A read-only rehearsal migrated the current workspace JSON into a temporary
+SQLite destination, compared all detached Account, Category, and Transaction
+records across backends, repeated migration idempotently, and confirmed that
+the source JSON sizes and modification times remained unchanged.
 
 ---
 

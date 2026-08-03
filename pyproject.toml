@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "smart-expense-tracker"
-version = "1.4.0"
-description = "A command-line application for tracking income and expenses in local JSON files."
+version = "1.5.0.dev0"
+description = "A command-line expense tracker with local JSON and SQLite storage."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -21,6 +21,7 @@ dev = [
 
 [project.scripts]
 expense-tracker = "main:main"
+expense-tracker-storage = "sqlite_backup:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -49,8 +50,10 @@ py-modules = [
     "report",
     "search",
     "sqlite_account_repository",
+    "sqlite_backup",
     "sqlite_category_repository",
     "sqlite_database",
+    "sqlite_migration",
     "sqlite_schema",
     "sqlite_transaction_repository",
     "storage",

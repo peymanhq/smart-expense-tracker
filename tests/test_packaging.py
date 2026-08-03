@@ -30,7 +30,7 @@ def test_project_metadata_declares_release_and_dependencies() -> None:
     project = load_pyproject()["project"]
 
     assert project["name"] == "smart-expense-tracker"
-    assert project["version"] == "1.4.0"
+    assert project["version"] == "1.5.0.dev0"
     assert project["requires-python"] == ">=3.10"
     assert project["dependencies"] == ["openpyxl>=3.1,<4.0"]
     assert project["optional-dependencies"]["dev"] == [
@@ -47,6 +47,15 @@ def test_console_script_points_to_existing_main_callable() -> None:
     entry_callable = getattr(importlib.import_module(module_name), attribute_name)
 
     assert entry_callable is main.main
+    assert callable(entry_callable)
+
+
+def test_storage_console_script_points_to_maintenance_callable() -> None:
+    target = load_pyproject()["project"]["scripts"]["expense-tracker-storage"]
+    module_name, attribute_name = target.split(":", maxsplit=1)
+
+    entry_callable = getattr(importlib.import_module(module_name), attribute_name)
+
     assert callable(entry_callable)
 
 
@@ -78,6 +87,60 @@ def test_importing_entry_module_does_not_start_cli(tmp_path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert result.stdout == ""
+    assert not (tmp_path / "data").exists()
+
+
+def test_sqlite_backend_is_opt_in_at_cli_start_without_import_side_effects(
+    tmp_path,
+) -> None:
+    environment = {
+        **os.environ,
+        "PYTHONPATH": str(PROJECT_ROOT / "src"),
+        "SMART_EXPENSE_TRACKER_BACKEND": "sqlite",
+    }
+    imported = subprocess.run(
+        [sys.executable, "-c", "import main"],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert imported.returncode == 0, imported.stderr
+    assert not (tmp_path / "data").exists()
+
+    started = subprocess.run(
+        [sys.executable, "-c", "import main; main.main()"],
+        cwd=tmp_path,
+        env=environment,
+        input="0\n",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert started.returncode == 0, started.stderr
+    assert "Smart Expense Tracker" in started.stdout
+    assert "Storage backend: SQLITE" in started.stdout
+    assert (tmp_path / "data" / "smart_expense_tracker.sqlite3").is_file()
+
+
+def test_invalid_backend_configuration_fails_cleanly(tmp_path) -> None:
+    result = subprocess.run(
+        [sys.executable, "-c", "import main; main.main()"],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "PYTHONPATH": str(PROJECT_ROOT / "src"),
+            "SMART_EXPENSE_TRACKER_BACKEND": "postgres",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Storage configuration error" in result.stdout
+    assert "Unsupported storage backend" in result.stdout
     assert not (tmp_path / "data").exists()
 
 

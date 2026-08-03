@@ -1,8 +1,8 @@
 # Smart Expense Tracker
 
-Smart Expense Tracker is a command-line application for recording
-income and expenses in a local JSON file. It supports common transaction
-workflows without requiring a database or external service.
+Smart Expense Tracker is a local command-line application for recording
+income and expenses. JSON remains the default storage backend, and the v1.5
+development line adds opt-in SQLite storage with non-destructive JSON migration.
 
 ## Version status
 
@@ -11,6 +11,10 @@ Account Management, Category Management, Date-based Transaction Management,
 managed Account/Category selection, Excel reporting, standards-based
 packaging, an installed CLI command, continuous integration, defensive Excel
 transaction import, and a guided workspace-aware import template.
+
+**v1.5.0.dev0** is the current development version. It adds complete SQLite
+repository composition, explicit backend selection, and all-or-nothing JSON to
+SQLite migration while retaining JSON as the safe default.
 
 ## Features
 
@@ -30,6 +34,8 @@ transaction import, and a guided workspace-aware import template.
 - Persist data locally in JSON
 - Keep an internal UUID separate from the user-facing display ID
 - Write JSON atomically to reduce the risk of partial-file corruption
+- Opt in to SQLite with database-level transactions and foreign keys
+- Migrate validated JSON data to SQLite without modifying the JSON source
 
 ## Project structure
 
@@ -47,6 +53,11 @@ smart-expense-tracker/
 │   ├── category_service.py  # Category validation and business operations
 │   ├── category_storage.py  # Validated, locked category JSON persistence
 │   ├── json_storage.py      # Shared atomic JSON writer
+│   ├── sqlite_database.py   # SQLite connection and transaction boundary
+│   ├── sqlite_schema.py     # Versioned SQLite schema validation
+│   ├── sqlite_migration.py  # Non-destructive JSON-to-SQLite migration
+│   ├── sqlite_backup.py     # Validated atomic backup/offline restore CLI
+│   ├── sqlite_*_repository.py # SQLite repository implementations
 │   ├── storage.py           # Versioned, locked transaction JSON storage
 │   ├── transaction_repository.py
 │   ├── transaction_service.py
@@ -122,6 +133,71 @@ running once from `Documents` and later from `Desktop` uses different `data/`
 directories, so the earlier records will appear missing until the command is
 run again from `Documents`. Use one consistent workspace directory for normal
 operation.
+
+## Optional SQLite backend
+
+JSON remains the default. To start a new workspace with SQLite explicitly:
+
+```bash
+SMART_EXPENSE_TRACKER_BACKEND=sqlite expense-tracker
+```
+
+To migrate an existing workspace on the first SQLite run:
+
+```bash
+SMART_EXPENSE_TRACKER_BACKEND=sqlite \
+SMART_EXPENSE_TRACKER_MIGRATE_JSON=1 \
+expense-tracker
+```
+
+Migration validates and snapshots all JSON records under their existing locks,
+preserves UUIDs, display IDs, timestamps, managed references, and next-ID
+counters, then imports them through one SQLite transaction. Source JSON files
+are never changed or deleted. The destination must be empty, or exactly match a
+previous completed migration. After migration, omit
+`SMART_EXPENSE_TRACKER_MIGRATE_JSON`; otherwise later SQLite changes will
+correctly make the stale JSON snapshot differ and migration will be refused.
+
+The SQLite database is stored at
+`data/smart_expense_tracker.sqlite3` in the selected workspace. Switching
+backends selects independent live stores; keep the backend setting consistent
+after cutover.
+
+### SQLite backup and rollback runbook
+
+Stop every Smart Expense Tracker process that uses the workspace before a
+restore or backend cutover. Create a backup outside the live `data/` directory:
+
+```bash
+expense-tracker-storage \
+  --workspace /path/to/workspace \
+  backup /safe/path/smart-expense-before-change.sqlite3
+```
+
+Existing backup destinations are refused. Use `--overwrite` only when replacing
+that exact backup is intentional. The command validates the source schema,
+copies through SQLite's online backup API into a same-directory temporary file,
+validates the copy, flushes it, and atomically replaces the requested output.
+
+Before a restore, first create another backup of the current live database.
+Then, while all application processes remain stopped, run:
+
+```bash
+expense-tracker-storage \
+  --workspace /path/to/workspace \
+  restore /safe/path/smart-expense-before-change.sqlite3 \
+  --confirm-overwrite
+```
+
+The confirmation flag is mandatory when a live database exists. The backup is
+validated before the live path is touched, and restore uses validated temporary
+output plus atomic replacement.
+
+For immediate rollback directly after JSON migration, before any SQLite-only
+writes, unset both SQLite environment variables and start normally to return to
+the unchanged JSON source. After new SQLite writes, JSON is stale and must not
+be treated as a lossless rollback target. Continue with SQLite or restore a
+known SQLite backup instead.
 
 Choose **Transaction Management** to open a date-scoped workspace. It starts
 with today as the active date. Change the active date to enter or manage
@@ -260,7 +336,7 @@ python -m pytest -q
 ```
 
 Tests use pytest temporary paths and do not write to application data files.
-The v1.4.0 release suite contains 471 passing tests.
+The current v1.5 development suite contains 603 passing tests.
 
 Compile the source and verify whitespace:
 
@@ -370,12 +446,13 @@ ID. If state is missing, it is recovered from the highest stored category ID.
 ## Known limitations
 
 - Local, single-user command-line application only
-- No database, GUI, charts, or multi-currency support
+- No GUI, charts, or multi-currency support
 - No PDF export or workbook charts
 - No authentication or synchronization
 - Transactions use managed Account and Category selection in the CLI, but
   explicit unlinking and automatic legacy reconciliation are not implemented
-- Referential integrity remains soft across the separate JSON files and locks
+- Referential integrity remains soft when the default JSON backend is used;
+  SQLite enforces managed foreign keys when selected
 - Transfers are not implemented
 - Transaction amounts still use `float`; exact `Decimal` money is deferred
 
@@ -384,5 +461,11 @@ ID. If state is missing, it is recovered from the highest stored category ID.
 v1.4.0 adds defensive `.xlsx` transaction import, duplicate-safe
 all-or-nothing bulk persistence, financial preview, new generated identity,
 and a guided workspace-aware template with Type-dependent Category dropdowns.
-Exact-money migration, visualization, currency, database, Telegram, and GUI
-work remain separate roadmap scope.
+Exact-money migration, visualization, currency, default SQLite cutover,
+Telegram, and GUI work remain separate roadmap scope.
+
+The v1.5 development line makes the completed SQLite repositories usable as an
+explicit opt-in backend and supplies non-destructive migration. JSON-to-SQLite
+cutover remains user-controlled; automatic default-backend switching, backup
+rotation/retention, and SQLite schema upgrades are not part of this development
+step.

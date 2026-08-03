@@ -130,7 +130,7 @@ SQLite will become the primary storage.
 
 ## Status
 
-Planned
+Partially implemented; default cutover remains planned.
 
 ## Context
 
@@ -138,7 +138,8 @@ JSON has limitations for reliability and scalability.
 
 ## Decision
 
-Future versions will migrate to SQLite.
+SQLite will replace JSON as the default after an explicit opt-in and migration
+period. ADR-027 governs the current activation phase.
 
 ## Consequences
 
@@ -869,3 +870,101 @@ export.
 - Only `.xlsx` new-transaction import is supported. `.xls`, `.xlsm`, CSV,
   updates, ID/timestamp restoration, Account/Category creation, transfers,
   multiple currencies, and partial import remain out of scope.
+
+---
+
+# ADR-027
+
+## Title
+
+Activate SQLite explicitly before changing the default backend.
+
+## Status
+
+Accepted
+
+## Context
+
+All three SQLite repository adapters now satisfy the established repository
+contracts, but existing workspaces contain independent JSON files with stable
+UUIDs, display IDs, timestamps, references, and counters. Silently selecting an
+empty SQLite database would make existing data appear lost. Automatically
+merging a non-empty database with JSON would also make conflict resolution
+ambiguous.
+
+## Decision
+
+Keep JSON as the default for the v1.5 development period. Select SQLite only
+through `SMART_EXPENSE_TRACKER_BACKEND=sqlite` when the CLI starts. Importing
+the entry module must remain free of filesystem side effects.
+
+Provide an explicit one-time migration through
+`SMART_EXPENSE_TRACKER_MIGRATE_JSON=1`. Acquire the existing Account, Category,
+and Transaction JSON locks in a fixed order and validate one snapshot before
+initializing the destination. Insert all entities and exact next-display-ID
+counters inside one SQLite transaction. Never change or delete source JSON.
+
+An empty destination may be populated. A non-empty destination is accepted
+only when its records and counters exactly equal the JSON snapshot, which makes
+an immediate retry idempotent. Any other non-empty destination is rejected;
+there is no implicit merge or overwrite.
+
+## Consequences
+
+- Existing users retain unchanged behavior until they explicitly opt in.
+- Migration preserves identity and deleted-ID gaps without trusting new ID
+  allocation.
+- Foreign-key or uniqueness failures roll back every imported record and
+  counter update.
+- JSON files remain a direct rollback source, but changes made after switching
+  to SQLite are not synchronized back to JSON.
+- Users must remove the one-time migration flag after cutover; later divergence
+  is deliberately reported instead of overwritten.
+- Making SQLite the default requires separate backup, restore, rehearsal, and
+  release rollback decisions.
+
+---
+
+# ADR-028
+
+## Title
+
+Use validated atomic SQLite backups and require offline restore confirmation.
+
+## Status
+
+Accepted
+
+## Context
+
+Opt-in SQLite migration needs a recoverable operational path before default
+cutover. A plain filesystem copy can capture a database during an incomplete
+write, while restoring an unvalidated or wrong file can destroy a valid live
+workspace. Atomic path replacement also cannot redirect another process that
+already has the older database inode open.
+
+## Decision
+
+Provide `expense-tracker-storage` as a separate maintenance command. Backup and
+restore use SQLite's online backup API to create a same-directory temporary
+database, validate the complete schema, flush the file, and atomically replace
+the requested destination.
+
+Refuse an existing backup destination unless `--overwrite` is supplied. Refuse
+replacement of an existing live workspace database unless
+`--confirm-overwrite` is supplied. Validate a restore source before touching
+the live path. Restore is explicitly offline: every application process using
+the workspace must be stopped first.
+
+## Consequences
+
+- Backup can take a consistent snapshot without shutting down readers.
+- Failed validation, copy, flush, or replacement preserves the previous
+  destination and cleans temporary output.
+- Restore requires a deliberate destructive confirmation and a pre-restore
+  safety backup in the operational runbook.
+- Immediate rollback to preserved JSON is lossless only before SQLite-only
+  writes. Later rollback restores a SQLite backup; reverse JSON synchronization
+  is not implemented.
+- Scheduling, retention, encryption, and off-device backup policy remain
+  deployment responsibilities.

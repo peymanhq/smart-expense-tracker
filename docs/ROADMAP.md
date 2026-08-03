@@ -175,6 +175,38 @@ transfers, and multiple currencies.
 
 ---
 
+# Smart Expense Tracker v1.5.0
+
+## Status
+
+In development (`1.5.0.dev0`).
+
+## Implemented Scope
+
+- SQLite implementations of all Account, Category, and Transaction repositories
+- Backend-neutral application composition with JSON as the default
+- Explicit opt-in SQLite selection at CLI startup
+- Import-safe backend configuration with no database creation on module import
+- Locked, validated JSON snapshot migration into one SQLite transaction
+- Preservation of UUIDs, display IDs, timestamps, managed references, and
+  next-display-ID counters
+- Idempotent retry after a completed identical migration
+- Rejection of non-empty divergent destinations and complete rollback on
+  constraint failures
+- Installed validated SQLite backup and explicitly confirmed offline restore
+- Documented cutover and rollback runbook
+- Read-only migration rehearsal against the current workspace with complete
+  cross-backend record equality and unchanged JSON source metadata
+
+## Remaining Before Default Cutover
+
+- Backup rotation, retention, and off-device storage policy
+- Release-level rollback policy
+- First SQLite schema-upgrade/migration framework
+- Decision to make SQLite the default backend
+
+---
+
 # Version 2.0
 
 ## Objectives
@@ -183,10 +215,10 @@ Replace JSON as the primary storage engine.
 
 ## Planned Work
 
-- SQLite database
-- Data migration
-- Backup and restore
-- Repository implementation
+- Make SQLite the default database after the v1.5 opt-in period
+- Release automation for the documented migration and rollback workflow
+- Automated backup rotation, retention, and off-device policy
+- Schema upgrade migrations
 - Better search performance
 - Atomic transactions
 

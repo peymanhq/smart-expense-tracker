@@ -2,11 +2,12 @@
 
 from collections.abc import Callable
 from datetime import date
+import os
 from pathlib import Path
 from typing import TypeVar
 
 from account import Account
-from application import build_json_application
+from application import ApplicationServices, build_application
 from category import Category
 from clock import TodayProvider, local_today
 from date_policy import ValidatedDateQuery
@@ -45,9 +46,12 @@ from transaction_service import (
 from validators import validate_transaction_date, validate_transaction_type
 
 TRANSACTION_TODAY_PROVIDER: TodayProvider = local_today
-APPLICATION = build_json_application(
+STORAGE_BACKEND_ENV = "SMART_EXPENSE_TRACKER_BACKEND"
+MIGRATE_JSON_ENV = "SMART_EXPENSE_TRACKER_MIGRATE_JSON"
+APPLICATION = build_application(
     today_provider=TRANSACTION_TODAY_PROVIDER,
 )
+ACTIVE_STORAGE_BACKEND = "json"
 ACCOUNT_SERVICE = APPLICATION.account_service
 CATEGORY_SERVICE = APPLICATION.category_service
 
@@ -74,6 +78,73 @@ TRANSACTION_ACCOUNT_DISPLAY_LOOKUP = get_account_by_display_id
 TRANSACTION_ACTIVE_CATEGORY_LIST = APPLICATION.active_category_list
 TRANSACTION_CATEGORY_DISPLAY_LOOKUP = get_category_by_display_id
 EXCEL_IMPORT_SERVICE = APPLICATION.excel_import_service
+
+
+def _bind_application(
+    application: ApplicationServices,
+    backend: str,
+) -> None:
+    """Replace CLI bindings after an explicit runtime backend selection."""
+    global APPLICATION, ACTIVE_STORAGE_BACKEND
+    global ACCOUNT_SERVICE, CATEGORY_SERVICE, TRANSACTION_SERVICE
+    global EXCEL_IMPORT_SERVICE
+    global TRANSACTION_ACTIVE_ACCOUNT_LIST, TRANSACTION_ACCOUNT_DISPLAY_LOOKUP
+    global TRANSACTION_ACTIVE_CATEGORY_LIST, TRANSACTION_CATEGORY_DISPLAY_LOOKUP
+    global activate_account, add_account, deactivate_account
+    global get_account_by_display_id, get_account_by_id, list_accounts
+    global rename_account
+    global activate_category, add_category, deactivate_category
+    global get_category_by_display_id, get_category_by_id, list_categories
+    global rename_category
+
+    APPLICATION = application
+    ACTIVE_STORAGE_BACKEND = backend
+    ACCOUNT_SERVICE = application.account_service
+    CATEGORY_SERVICE = application.category_service
+    TRANSACTION_SERVICE = application.transaction_service
+    EXCEL_IMPORT_SERVICE = application.excel_import_service
+    activate_account = ACCOUNT_SERVICE.activate_account
+    add_account = ACCOUNT_SERVICE.add_account
+    deactivate_account = ACCOUNT_SERVICE.deactivate_account
+    get_account_by_display_id = application.account_display_lookup
+    get_account_by_id = application.account_lookup
+    list_accounts = application.account_list
+    rename_account = ACCOUNT_SERVICE.rename_account
+    activate_category = CATEGORY_SERVICE.activate_category
+    add_category = CATEGORY_SERVICE.add_category
+    deactivate_category = CATEGORY_SERVICE.deactivate_category
+    get_category_by_display_id = application.category_display_lookup
+    get_category_by_id = application.category_lookup
+    list_categories = application.category_list
+    rename_category = CATEGORY_SERVICE.rename_category
+    TRANSACTION_ACTIVE_ACCOUNT_LIST = application.active_account_list
+    TRANSACTION_ACCOUNT_DISPLAY_LOOKUP = get_account_by_display_id
+    TRANSACTION_ACTIVE_CATEGORY_LIST = application.active_category_list
+    TRANSACTION_CATEGORY_DISPLAY_LOOKUP = get_category_by_display_id
+
+
+def _environment_flag(name: str) -> bool:
+    value = os.environ.get(name, "0").strip().casefold()
+    if value in {"0", "false", "no", "off", ""}:
+        return False
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    raise ValueError(f"{name} must be a true/false value.")
+
+
+def configure_storage_from_environment() -> None:
+    """Apply the opt-in backend selection without import-time disk access."""
+    requested_backend = os.environ.get(STORAGE_BACKEND_ENV, "json")
+    normalized_backend = requested_backend.strip().casefold()
+    migrate_json = _environment_flag(MIGRATE_JSON_ENV)
+    if normalized_backend == ACTIVE_STORAGE_BACKEND and not migrate_json:
+        return
+    application = build_application(
+        backend=requested_backend,
+        migrate_json=migrate_json,
+        today_provider=TRANSACTION_TODAY_PROVIDER,
+    )
+    _bind_application(application, normalized_backend)
 
 ManagedRecord = TypeVar("ManagedRecord", Account, Category)
 AccountList = Callable[[], list[Account]]
@@ -1191,6 +1262,12 @@ def pause() -> None:
 
 
 def main() -> None:
+    try:
+        configure_storage_from_environment()
+    except (StorageError, ValueError) as error:
+        print(f"Storage configuration error: {error}")
+        return
+    print(f"Storage backend: {ACTIVE_STORAGE_BACKEND.upper()}")
 
     while True:
         print("\n\n=== Smart Expense Tracker ===")

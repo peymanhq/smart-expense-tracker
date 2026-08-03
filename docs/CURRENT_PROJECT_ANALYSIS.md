@@ -2,11 +2,13 @@
 
 ## Executive Summary
 
-Smart Expense Tracker v1.4.0 is released. It includes defensive Excel
-transaction import, a guided workspace-aware import template, duplicate
-protection, financial preview, and atomic bulk persistence. Account Management,
-Category Management, Date-based Transaction Management, and managed transaction
-references remain implemented on top of JSON persistence.
+Smart Expense Tracker v1.4.0 is released, and v1.5.0.dev0 is the current
+development line. The complete Account, Category, and Transaction repository
+set now supports both the default JSON backend and an explicit SQLite backend.
+SQLite composition and non-destructive JSON migration are integrated without
+changing the application-service or Excel workflow contracts. Validated atomic
+SQLite backup and explicitly confirmed offline restore are also available
+through a separate maintenance command.
 
 The transaction path now has explicit boundaries:
 
@@ -15,7 +17,7 @@ main.py
     -> TransactionService
     -> TransactionRepository
     -> JsonTransactionRepository / storage.py
-    -> shared atomic JSON writer
+       OR SQLiteTransactionRepository / SQLiteDatabase
 ```
 
 Excel import reaches the same transaction path after a separate workbook
@@ -26,8 +28,8 @@ main.py
     -> ExcelImportService
     -> TransactionService.add_transactions
     -> TransactionRepository.create_many
-    -> JsonTransactionRepository / storage.py
-    -> one locked atomic JSON replacement
+    -> selected TransactionRepository
+    -> one atomic JSON replacement OR one SQLite transaction
 ```
 
 The completed date feature adds a selected-date workspace, historical entry,
@@ -36,9 +38,9 @@ search, and daily/range reports. Transaction mutations are locked, creation
 allocates display IDs atomically, and schema version 3 remains compatible with
 legacy transaction files.
 
-The current suite contains 471 passing tests. Transaction persistence,
-packaging, and Excel tests use temporary files and do not modify runtime JSON
-data.
+The current suite contains 603 passing tests. Persistence, migration,
+packaging, and Excel tests use temporary workspaces and do not modify runtime
+JSON data.
 
 ## Current Architecture
 
@@ -49,7 +51,9 @@ date starts from an injected today provider, lasts only for one Transaction
 Management session, and is not persisted.
 
 The CLI does not allocate transaction display IDs, generate timestamps, or
-access transaction JSON directly.
+access backend records directly. JSON remains the default. SQLite is selected
+at CLI startup through `SMART_EXPENSE_TRACKER_BACKEND=sqlite`; importing
+`main.py` still creates no data files.
 
 ### Application
 
@@ -81,9 +85,10 @@ the same date selection before aggregation.
 ### Repository and Persistence
 
 `TransactionRepository` defines the operations required by the service.
-`JsonTransactionRepository` implements them with the current flat JSON
-document. This permits a future storage replacement without introducing JSON
-access into application or presentation code.
+`JsonTransactionRepository` and `SQLiteTransactionRepository` implement the
+same contract. `build_application()` composes the selected repository family
+without introducing backend access into application services or presentation
+code.
 
 Complete create, replace, delete, and compatibility mutations hold a
 cross-process lock across read-modify-write. Creation performs the following
@@ -147,10 +152,10 @@ future work.
 
 Transactions can store optional managed-record UUIDs alongside required
 snapshot names. `TransactionService` receives public UUID lookup callables from
-`main.py`. Newly supplied references must exist and be active; managed category
-types must match. Preserved inactive historical references are not revalidated
-during unrelated updates, and managed snapshots cannot be edited without a new
-reference.
+application composition. Newly supplied references must exist and be active;
+managed category types must match. Preserved inactive historical references are
+not revalidated during unrelated updates, and managed snapshots cannot be
+edited without a new reference.
 
 Transaction add and update now list active records by display ID and submit the
 selected UUIDs. Categories are listed for the resulting transaction type.
@@ -159,15 +164,26 @@ ones, and legacy snapshot-only records can be linked by choosing an active
 record. Explicit unlinking and automatic migration of historical snapshot-only
 values remain future work.
 
-Account, Category, and Transaction data still use separate JSON files and
-locks, so cross-file referential integrity is deliberately soft.
+Account, Category, and Transaction data use separate files and locks under the
+default JSON backend, so cross-file referential integrity is deliberately soft.
+The opt-in SQLite backend enforces managed-reference foreign keys.
 
 ### Flat JSON Limits
 
-Locking prevents lost read-modify-write mutations, but every transaction change
-still rewrites the whole file. JSON is appropriate for the current scale;
-SQLite remains planned for stronger constraints, querying, migrations, and
-larger datasets.
+Locking prevents lost read-modify-write mutations, but every JSON transaction
+change still rewrites the whole file. SQLite is now usable as an explicit
+alternative with atomic SQL transactions and indexed queries. It is not yet the
+default, and schema upgrades, automated backups, and merge-style migration are
+not implemented.
+
+### Operational Recovery
+
+`expense-tracker-storage` creates validated atomic SQLite backups and restores
+them only with explicit overwrite confirmation. Restore remains an offline
+operation because atomic file replacement cannot coordinate already-running
+external processes. Immediate rollback may return to preserved JSON only before
+SQLite receives new writes; later recovery uses a SQLite backup. Rotation,
+retention, encryption, and off-device copies remain operational policy.
 
 ### Project Tooling
 
@@ -216,9 +232,10 @@ Charts, PDF output, and exact-money migration remain deferred.
 
 Keep future work scoped and incremental:
 
-1. Define exact-money representation and migration.
-2. Extend reporting formats after the import/export header contract stabilizes.
-3. Introduce SQLite through another `TransactionRepository` implementation.
+1. Define backup rotation/retention and release rollback policy before making
+   SQLite the default.
+2. Define exact-money representation and migration.
+3. Add a first SQLite schema-upgrade contract before schema version 2 exists.
 4. Consider linting, typing, and coverage policy as separately scoped tooling.
 
 Multiple accounts, multiple currencies, transfers, dashboards, a GUI, and

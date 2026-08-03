@@ -1,4 +1,4 @@
-"""Application service composition for one JSON-backed workspace."""
+"""Application service composition for one workspace and storage backend."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -6,20 +6,30 @@ from functools import partial
 from pathlib import Path
 
 from account import Account
-from account_repository import JsonAccountRepository
+from account_repository import AccountRepository, JsonAccountRepository
 from account_service import AccountService
 from category import Category
-from category_repository import JsonCategoryRepository
+from category_repository import CategoryRepository, JsonCategoryRepository
 from category_service import CategoryService
 from clock import TodayProvider, UtcNowProvider, local_today, utc_now
 from excel_import_service import ExcelImportService
-from transaction_repository import JsonTransactionRepository
+from sqlite_account_repository import SQLiteAccountRepository
+from sqlite_category_repository import SQLiteCategoryRepository
+from sqlite_database import SQLiteDatabase
+from sqlite_migration import migrate_json_to_sqlite
+from sqlite_schema import initialize_schema
+from sqlite_transaction_repository import SQLiteTransactionRepository
+from transaction_repository import (
+    JsonTransactionRepository,
+    TransactionRepository,
+)
 from transaction_service import TransactionService
 
 AccountList = Callable[[], list[Account]]
 CategoryList = Callable[..., list[Category]]
 AccountLookup = Callable[[str], Account | None]
 CategoryLookup = Callable[[str], Category | None]
+SUPPORTED_STORAGE_BACKENDS = frozenset({"json", "sqlite"})
 
 
 @dataclass(frozen=True)
@@ -50,25 +60,15 @@ def _workspace_data_path(
     return Path(workspace_root) / "data" / filename
 
 
-def build_json_application(
-    workspace_root: Path | str | None = None,
+def _compose_application(
+    account_repository: AccountRepository,
+    category_repository: CategoryRepository,
+    transaction_repository: TransactionRepository,
     *,
-    today_provider: TodayProvider = local_today,
-    utc_now_provider: UtcNowProvider = utc_now,
+    today_provider: TodayProvider,
+    utc_now_provider: UtcNowProvider,
 ) -> ApplicationServices:
-    """Compose application services for the current JSON persistence backend."""
-    account_repository = JsonAccountRepository(
-        _workspace_data_path(workspace_root, "accounts.json"),
-        _workspace_data_path(workspace_root, "accounts_state.json"),
-    )
-    category_repository = JsonCategoryRepository(
-        _workspace_data_path(workspace_root, "categories.json"),
-        _workspace_data_path(workspace_root, "categories_state.json"),
-    )
-    transaction_repository = JsonTransactionRepository(
-        _workspace_data_path(workspace_root, "transactions.json")
-    )
-
+    """Wire backend-neutral repositories into the application services."""
     account_service = AccountService(account_repository)
     category_service = CategoryService(category_repository)
     account_list = account_service.list_accounts
@@ -108,3 +108,85 @@ def build_json_application(
         account_display_lookup=account_display_lookup,
         category_display_lookup=category_display_lookup,
     )
+
+
+def build_json_application(
+    workspace_root: Path | str | None = None,
+    *,
+    today_provider: TodayProvider = local_today,
+    utc_now_provider: UtcNowProvider = utc_now,
+) -> ApplicationServices:
+    """Compose application services for the current JSON persistence backend."""
+    account_repository = JsonAccountRepository(
+        _workspace_data_path(workspace_root, "accounts.json"),
+        _workspace_data_path(workspace_root, "accounts_state.json"),
+    )
+    category_repository = JsonCategoryRepository(
+        _workspace_data_path(workspace_root, "categories.json"),
+        _workspace_data_path(workspace_root, "categories_state.json"),
+    )
+    transaction_repository = JsonTransactionRepository(
+        _workspace_data_path(workspace_root, "transactions.json")
+    )
+
+    return _compose_application(
+        account_repository,
+        category_repository,
+        transaction_repository,
+        today_provider=today_provider,
+        utc_now_provider=utc_now_provider,
+    )
+
+
+def build_sqlite_application(
+    workspace_root: Path | str | None = None,
+    *,
+    today_provider: TodayProvider = local_today,
+    utc_now_provider: UtcNowProvider = utc_now,
+    migrate_json: bool = False,
+) -> ApplicationServices:
+    """Compose services for SQLite, optionally importing JSON exactly once."""
+    database = SQLiteDatabase.for_workspace(workspace_root)
+    if migrate_json:
+        migrate_json_to_sqlite(workspace_root, database=database)
+    else:
+        initialize_schema(database)
+    return _compose_application(
+        SQLiteAccountRepository(database),
+        SQLiteCategoryRepository(database),
+        SQLiteTransactionRepository(database),
+        today_provider=today_provider,
+        utc_now_provider=utc_now_provider,
+    )
+
+
+def build_application(
+    workspace_root: Path | str | None = None,
+    *,
+    backend: str = "json",
+    migrate_json: bool = False,
+    today_provider: TodayProvider = local_today,
+    utc_now_provider: UtcNowProvider = utc_now,
+) -> ApplicationServices:
+    """Compose one explicitly selected backend; JSON remains the default."""
+    if not isinstance(backend, str):
+        raise ValueError("Storage backend must be json or sqlite.")
+    normalized_backend = backend.strip().casefold()
+    if normalized_backend not in SUPPORTED_STORAGE_BACKENDS:
+        raise ValueError(
+            f"Unsupported storage backend {backend!r}; choose json or sqlite."
+        )
+    if migrate_json and normalized_backend != "sqlite":
+        raise ValueError("JSON migration is only valid with the sqlite backend.")
+    builder = (
+        build_json_application
+        if normalized_backend == "json"
+        else build_sqlite_application
+    )
+    options = {
+        "today_provider": today_provider,
+        "utc_now_provider": utc_now_provider,
+    }
+    if normalized_backend == "sqlite":
+        options["migrate_json"] = migrate_json
+    return builder(workspace_root, **options)

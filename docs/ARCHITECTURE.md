@@ -20,7 +20,7 @@ User
   ▼
 main.py
   │
-  ├── application.py
+  ├── application.py (JSON default / SQLite opt-in)
   │     ├── account_service.py
   │     │     └── account_repository.py
   │     ├── category_service.py
@@ -28,9 +28,9 @@ main.py
   │     ├── transaction_service.py
   │     │     └── transaction_repository.py
   │     └── excel_import_service.py
-  ├── account_storage.py
-  ├── category_storage.py
-  ├── storage.py
+  ├── JSON repositories -> account/category/transaction storage modules
+  ├── SQLite repositories -> sqlite_database.py / sqlite_schema.py
+  ├── sqlite_migration.py (locked JSON snapshot -> one SQL transaction)
   ├── validators.py
   ├── report.py
   ├── excel_exporter.py
@@ -44,7 +44,7 @@ main.py
   └── json_storage.py
         │
         ▼
-  accounts.json / categories.json / categories_state.json / transactions.json
+  JSON workspace files OR smart_expense_tracker.sqlite3
 ```
 
 ### Module Responsibilities
@@ -52,7 +52,7 @@ main.py
 | Module | Responsibility |
 |---------|----------------|
 | `main.py` | CLI interaction and workflow orchestration |
-| `application.py` | Typed construction of services and JSON repositories for one workspace |
+| `application.py` | Backend-neutral service wiring plus JSON/SQLite factories for one workspace |
 | `account.py` | Account data model |
 | `account_service.py` | Account validation and add, rename, deactivate, and activate rules |
 | `account_repository.py` | Account repository protocol and JSON implementation |
@@ -63,10 +63,13 @@ main.py
 | `category_storage.py` | Validated, locked category-list and counter persistence |
 | `json_storage.py` | Shared atomic JSON writing |
 | `persistence_errors.py` | Backend-neutral persistence failure exposed to orchestration |
-| `sqlite_account_repository.py` | Inactive SQLite implementation of the Account repository protocol |
-| `sqlite_category_repository.py` | Inactive SQLite implementation of the Category repository protocol |
-| `sqlite_database.py` | Inactive SQLite path, connection, and transaction foundation |
-| `sqlite_schema.py` | Inactive SQLite schema version 1 initialization and validation |
+| `sqlite_account_repository.py` | Opt-in SQLite implementation of the Account repository protocol |
+| `sqlite_category_repository.py` | Opt-in SQLite implementation of the Category repository protocol |
+| `sqlite_transaction_repository.py` | Opt-in SQLite implementation of the Transaction repository protocol |
+| `sqlite_database.py` | SQLite path, connection, and transaction foundation |
+| `sqlite_schema.py` | SQLite schema version 1 initialization and validation |
+| `sqlite_migration.py` | Non-destructive, all-or-nothing JSON snapshot migration |
+| `sqlite_backup.py` | Validated atomic SQLite backup and offline restore operations |
 | `transaction.py` | Typed, passive Transaction data model |
 | `transaction_factory.py` | Transaction creation |
 | `transaction_service.py` | Transaction workflows, date rules, and timestamp behavior |
@@ -86,10 +89,12 @@ main.py
 | `id_generator.py` | UUID creation and display-ID formatting, parsing, and legacy-state calculation |
 
 `main.py` owns terminal interaction and date-workspace session state.
-`application.py` owns dependency construction for the current JSON backend.
-Application services coordinate workflows without terminal or JSON access.
+`application.py` owns dependency construction for both supported backends.
+`build_application()` keeps JSON as the default and normalizes an explicit
+`json` or `sqlite` choice. Application services coordinate workflows without
+terminal, JSON, or SQLite access.
 The Account, Category, and Transaction repository protocols isolate the
-application layer from the current JSON implementations.
+application layer from both persistence implementations.
 
 ### Excel Export Data Flow
 
@@ -406,11 +411,20 @@ functions into a service.
 
 ## SQLite Persistence Foundation
 
-SQLite infrastructure and Account/Category repository adapters exist but are
-not part of production composition. `build_json_application()` remains
-unchanged, JSON remains the only active backend, and neither `main.py` nor any
-service imports SQLite. There is no SQLite Transaction repository, backend
-selector, or JSON migration.
+SQLite infrastructure and all three repository adapters are available through
+`build_sqlite_application()`. JSON remains the production default;
+`SMART_EXPENSE_TRACKER_BACKEND=sqlite` selects SQLite only when the CLI starts.
+The entry module still performs no SQLite initialization merely by being
+imported. Services remain backend-neutral.
+
+`SMART_EXPENSE_TRACKER_MIGRATE_JSON=1` requests a one-time migration alongside
+the SQLite selection. Migration acquires the three established JSON locks in a
+fixed order, loads and validates one snapshot, initializes or validates the
+SQLite schema, and imports every entity plus all next-display-ID counters in a
+single `BEGIN IMMEDIATE` transaction. It preserves identity, snapshots,
+references, financial dates, and timestamps. JSON source files are never
+modified. A non-empty destination is accepted only when it exactly matches the
+snapshot, making an immediate retry idempotent and rejecting ambiguous merges.
 
 ### Path and Connection Policy
 
@@ -434,8 +448,8 @@ no ORM, external database dependency, global connection, or import-time access.
 
 Writes use an explicit `BEGIN IMMEDIATE` context. Successful work commits once;
 application exceptions and SQLite failures roll back the complete transaction,
-and the connection is always closed. This boundary will allow a future
-repository to allocate a display ID and insert its record atomically.
+and the connection is always closed. Repositories allocate display IDs and
+insert records within that same transaction boundary.
 
 ### Schema Version 1
 
@@ -524,8 +538,27 @@ creation allocate `T-####` values and insert rows inside one `BEGIN IMMEDIATE`
 transaction. Bulk duplicate detection shares one backend-neutral comparison
 implementation with JSON, and every failed bulk write rolls back all rows and
 counter changes. Replacement preserves the stored UUID, display ID, and
-creation timestamp. Production activation, backend selection, and JSON
-migration remain separate work.
+creation timestamp. Production composition, explicit backend selection, and
+guarded JSON migration are implemented. Making SQLite the default, automated
+backup scheduling/retention, merge-style migration, and schema upgrades remain
+separate work.
+
+### Backup and Restore Boundary
+
+`sqlite_backup.py` provides the installed `expense-tracker-storage` command.
+Backup and restore validate schema version 1 before copying. They use SQLite's
+online backup API to produce a private same-directory temporary database,
+validate and flush that complete copy, then atomically replace the destination.
+An existing backup is protected unless `--overwrite` is explicit. Replacing a
+live workspace database requires `--confirm-overwrite`.
+
+Restore is an offline maintenance operation: all processes using the workspace
+must be stopped before replacement. The application intentionally has no
+long-lived SQLite connections, but atomic path replacement cannot force an
+already-running external process to abandon an older open database inode.
+Operational rollback immediately after migration may return to unchanged JSON
+only before SQLite receives new writes. Later rollback uses a point-in-time
+SQLite backup; there is no reverse synchronization into JSON.
 
 ---
 
@@ -544,10 +577,10 @@ lookup/search (`search.py`), reporting (`report.py`), formatting
 Management use separate persistence and connect to transactions only through
 service query APIs and optional UUID references.
 
-Replacing JSON later requires new implementations of the three repository
-protocols plus a new composition function beside `build_json_application()`;
-managed-record business rules, Excel services, and CLI workflows do not require
-direct storage changes.
+Both backends implement the same three repository protocols and reuse the same
+managed-record business rules, Excel services, and CLI workflows. A future
+default-backend cutover therefore requires release and operational policy
+rather than changes to service business logic.
 
 ---
 
