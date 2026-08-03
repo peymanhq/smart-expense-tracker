@@ -482,3 +482,7 @@ ID. If state is missing, it is recovered from the highest stored category ID.
 - Excel import.
 - Excel template generation.
 - Safer workbook validation.
+
+## License
+
+Smart Expense Tracker is released under the [MIT License](LICENSE).

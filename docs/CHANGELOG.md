@@ -6,6 +6,14 @@ The format is based on **Keep a Changelog** and follows **Semantic Versioning**.
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- MIT license text and SPDX package metadata
+
+---
+
 ## [1.5.0] - 2026-08-03
 
 ### Added
