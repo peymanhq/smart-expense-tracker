@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 from account import Account, account_name_key
@@ -77,7 +78,7 @@ class ResolvedExcelImportRow:
     row_number: int
     transaction_date: date
     transaction_type: str
-    amount: float
+    amount: Decimal
     description: str
     account_name: str
     account_id: str
@@ -155,23 +156,29 @@ class ExcelImportPreview:
         )
 
     @property
-    def total_income(self) -> float:
+    def total_income(self) -> Decimal:
         return sum(
-            row.amount
-            for row in self.candidates
-            if row.transaction_type == "income"
+            (
+                row.amount
+                for row in self.candidates
+                if row.transaction_type == "income"
+            ),
+            start=Decimal("0"),
         )
 
     @property
-    def total_expense(self) -> float:
+    def total_expense(self) -> Decimal:
         return sum(
-            row.amount
-            for row in self.candidates
-            if row.transaction_type == "expense"
+            (
+                row.amount
+                for row in self.candidates
+                if row.transaction_type == "expense"
+            ),
+            start=Decimal("0"),
         )
 
     @property
-    def net_balance_impact(self) -> float:
+    def net_balance_impact(self) -> Decimal:
         return self.total_income - self.total_expense
 
     @property
@@ -186,9 +193,9 @@ class ExcelImportResult:
     source_path: Path
     worksheet_name: str
     transactions: tuple[Transaction, ...]
-    total_income: float
-    total_expense: float
-    net_balance_impact: float
+    total_income: Decimal
+    total_expense: Decimal
+    net_balance_impact: Decimal
 
     @property
     def imported_count(self) -> int:
@@ -388,14 +395,14 @@ class ExcelImportService:
                     )
                 )
                 accepted_date = None
-            account, account_issue = self._resolve_account(
+            resolved_account, account_issue = self._resolve_account(
                 row.row_number,
                 row.account_name,
                 accounts_by_name,
             )
             if account_issue is not None:
                 row_issues.append(account_issue)
-            category, category_issue = self._resolve_category(
+            resolved_category, category_issue = self._resolve_category(
                 row.row_number,
                 row.category_name,
                 row.transaction_type,
@@ -407,8 +414,8 @@ class ExcelImportService:
                 issues.extend(row_issues)
                 continue
             assert accepted_date is not None
-            assert account is not None
-            assert category is not None
+            assert resolved_account is not None
+            assert resolved_category is not None
             resolved_rows.append(
                 ResolvedExcelImportRow(
                     row_number=row.row_number,
@@ -416,10 +423,10 @@ class ExcelImportService:
                     transaction_type=row.transaction_type,
                     amount=row.amount,
                     description=row.description,
-                    account_name=account.name,
-                    account_id=account.id,
-                    category_name=category.name,
-                    category_id=category.id,
+                    account_name=resolved_account.name,
+                    account_id=resolved_account.id,
+                    category_name=resolved_category.name,
+                    category_id=resolved_category.id,
                 )
             )
 
@@ -437,13 +444,13 @@ class ExcelImportService:
         }
         accepted_rows: list[ResolvedExcelImportRow] = []
         earlier_rows: dict[TransactionComparisonKey, int] = {}
-        for row in resolved_rows:
-            key = row.comparison_key()
+        for resolved_row in resolved_rows:
+            key = resolved_row.comparison_key()
             existing = existing_by_key.get(key)
             if existing is not None:
                 issues.append(
                     _issue(
-                        row.row_number,
+                        resolved_row.row_number,
                         "Duplicate transaction matches existing transaction "
                         f"{existing.display_id}.",
                         "duplicate_conflict",
@@ -455,7 +462,7 @@ class ExcelImportService:
             if earlier_row is not None:
                 issues.append(
                     _issue(
-                        row.row_number,
+                        resolved_row.row_number,
                         "Duplicate transaction matches earlier Excel row "
                         f"{earlier_row}.",
                         "duplicate_conflict",
@@ -463,8 +470,8 @@ class ExcelImportService:
                     )
                 )
                 continue
-            earlier_rows[key] = row.row_number
-            accepted_rows.append(row)
+            earlier_rows[key] = resolved_row.row_number
+            accepted_rows.append(resolved_row)
 
         return ExcelImportPreview(
             source_path=parsed.source_path,

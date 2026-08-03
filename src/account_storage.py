@@ -53,7 +53,9 @@ def _lock_file(lock_file) -> None:
             lock_file.write(b"\0")
             lock_file.flush()
         lock_file.seek(0)
-        msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+        msvcrt.locking(  # type: ignore[attr-defined]
+            lock_file.fileno(), msvcrt.LK_LOCK, 1  # type: ignore[attr-defined]
+        )
         return
 
     import fcntl
@@ -66,7 +68,9 @@ def _unlock_file(lock_file) -> None:
         import msvcrt
 
         lock_file.seek(0)
-        msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+        msvcrt.locking(  # type: ignore[attr-defined]
+            lock_file.fileno(), msvcrt.LK_UNLCK, 1  # type: ignore[attr-defined]
+        )
         return
 
     import fcntl

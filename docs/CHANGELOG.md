@@ -8,9 +8,23 @@ The format is based on **Keep a Changelog** and follows **Semantic Versioning**.
 
 ## [Unreleased]
 
+---
+
+## [1.5.1] - 2026-08-03
+
 ### Added
 
 - MIT license text and SPDX package metadata
+- Static type checking for all source modules in CI
+- A 90% minimum source-coverage gate in CI
+
+### Changed
+
+- Replaced binary floating-point transaction amounts with exact `Decimal`
+  values across validation, reporting, services, import, and repositories
+- Added JSON transaction schema version 4 with canonical decimal-text amounts
+- Added automatic SQLite schema version 1 to 2 migration from `REAL` amounts
+  to canonical decimal `TEXT`
 
 ---
 

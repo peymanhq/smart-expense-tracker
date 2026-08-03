@@ -4,7 +4,7 @@ from collections.abc import Callable
 from datetime import date
 import os
 from pathlib import Path
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from account import Account
 from application import (
@@ -471,6 +471,8 @@ def handle_daily_report(
         _print_transaction_error(error)
         return
 
+    assert dates.transaction_date is not None
+
     summary = generate_daily_summary(
         service.list_transactions(),
         dates.transaction_date,
@@ -505,6 +507,9 @@ def handle_date_range_report(
     except (ValueError, FutureTransactionDateError) as error:
         _print_transaction_error(error)
         return
+
+    assert dates.start_date is not None
+    assert dates.end_date is not None
 
     summary = generate_date_range_summary(
         service.list_transactions(),
@@ -736,21 +741,21 @@ def handle_filter_transactions(
 ) -> None:
     service = _selected_transaction_service(service)
 
-    transaction_type = input(
+    transaction_type_value = input(
         "Transaction type (income/expense, leave blank for all): "
     ).strip()
-    transaction_type = transaction_type or None
+    transaction_type = transaction_type_value or None
 
-    category = input("Category (leave blank for all): ").strip()
-    category = category or None
+    category_value = input("Category (leave blank for all): ").strip()
+    category = category_value or None
 
-    account = input("Account (leave blank for all): ").strip()
-    account = account or None
+    account_value = input("Account (leave blank for all): ").strip()
+    account = account_value or None
 
-    description = input(
+    description_value = input(
         "Description text (leave blank for all): "
     ).strip()
-    description = description or None
+    description = description_value or None
 
     accepted, dates = _prompt_date_filter(service)
     if not accepted or dates is None:
@@ -884,7 +889,7 @@ def handle_update_transaction(
             )
 
         new_date = prompt_transaction_date(existing.transaction_date)
-        updates = {}
+        updates: dict[str, Any] = {}
         if type_input:
             updates["transaction_type"] = resulting_type
         if amount_input:

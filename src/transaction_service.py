@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime
+from decimal import Decimal
 
 from account import Account
 from category import Category
@@ -21,6 +22,7 @@ from transaction_repository import (
     TransactionRepository,
 )
 from validators import (
+    AmountInput,
     validate_optional_uuid,
     validate_transaction_date,
     validate_transaction_type,
@@ -37,7 +39,7 @@ class TransactionCreateRequest:
 
     transaction_date: date
     transaction_type: str
-    amount: float
+    amount: Decimal
     category: str
     account: str
     description: str
@@ -270,11 +272,11 @@ class TransactionService:
         return category
 
     def _active_account(self, account_id: str) -> Account:
-        account_id = validate_optional_uuid(account_id, "Account ID")
-        assert account_id is not None
-        account = self._account_by_id(account_id)
+        accepted_id = validate_optional_uuid(account_id, "Account ID")
+        assert accepted_id is not None
+        account = self._account_by_id(accepted_id)
         if not account.is_active:
-            raise ManagedAccountInactiveError(account_id)
+            raise ManagedAccountInactiveError(accepted_id)
         return account
 
     def _compatible_category(
@@ -284,14 +286,14 @@ class TransactionService:
         *,
         require_active: bool,
     ) -> Category:
-        category_id = validate_optional_uuid(category_id, "Category ID")
-        assert category_id is not None
-        category = self._category_by_id(category_id)
+        accepted_id = validate_optional_uuid(category_id, "Category ID")
+        assert accepted_id is not None
+        category = self._category_by_id(accepted_id)
         if require_active and not category.is_active:
-            raise ManagedCategoryInactiveError(category_id)
+            raise ManagedCategoryInactiveError(accepted_id)
         if category.transaction_type != transaction_type:
             raise ManagedCategoryTypeMismatchError(
-                category_id,
+                accepted_id,
                 category.transaction_type,
                 transaction_type,
             )
@@ -302,7 +304,7 @@ class TransactionService:
         *,
         transaction_date: date,
         transaction_type: str,
-        amount: float,
+        amount: AmountInput,
         category: str,
         account: str,
         description: str,
@@ -407,7 +409,7 @@ class TransactionService:
         *,
         active_date: date,
         transaction_type: str | None = None,
-        amount: float | None = None,
+        amount: AmountInput | None = None,
         category: str | None = None,
         account: str | None = None,
         description: str | None = None,
@@ -441,6 +443,7 @@ class TransactionService:
         if account_id is not _REFERENCE_NOT_SUPPLIED:
             if account_id is None:
                 raise ManagedReferenceClearingError("Account")
+            assert isinstance(account_id, str)
             managed_account = self._active_account(account_id)
             accepted_account_id = managed_account.id
             accepted_account = managed_account.name
@@ -455,6 +458,7 @@ class TransactionService:
         if category_id is not _REFERENCE_NOT_SUPPLIED:
             if category_id is None:
                 raise ManagedReferenceClearingError("Category")
+            assert isinstance(category_id, str)
             managed_category = self._compatible_category(
                 category_id,
                 accepted_type,

@@ -3,6 +3,7 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 
 from search import filter_transactions
 from transaction import Transaction
@@ -10,9 +11,9 @@ from transaction import Transaction
 
 @dataclass(frozen=True)
 class FinancialSummary:
-    total_income: float
-    total_expense: float
-    balance: float
+    total_income: Decimal
+    total_expense: Decimal
+    balance: Decimal
     transaction_count: int
 
 
@@ -20,8 +21,8 @@ def calculate_financial_summary(
     transactions: Iterable[Transaction],
 ) -> FinancialSummary:
     """Aggregate an already selected transaction collection."""
-    total_income = 0.0
-    total_expense = 0.0
+    total_income = Decimal("0")
+    total_expense = Decimal("0")
     transaction_count = 0
 
     for transaction in transactions:
@@ -65,7 +66,7 @@ def generate_date_range_summary(
 
 def calculate_summary(
     transactions: Iterable[Transaction],
-) -> tuple[float, float, float]:
+) -> tuple[Decimal, Decimal, Decimal]:
     """Backward-compatible tuple API for the existing all-time report."""
     summary = calculate_financial_summary(transactions)
     return summary.total_income, summary.total_expense, summary.balance

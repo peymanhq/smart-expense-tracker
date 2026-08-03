@@ -3,6 +3,7 @@
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 import unicodedata
 
@@ -76,7 +77,7 @@ def _write_transactions(
                 transaction.display_id,
                 transaction.transaction_date,
                 transaction.type.title(),
-                transaction.amount,
+                float(transaction.amount),
                 transaction.description,
                 _resolved_name(
                     transaction.account,
@@ -121,9 +122,9 @@ def _write_summary(
         transaction.type == "expense" for transaction in transactions
     )
     rows = (
-        ("Total Income", summary.total_income),
-        ("Total Expense", summary.total_expense),
-        ("Balance", summary.balance),
+        ("Total Income", float(summary.total_income)),
+        ("Total Expense", float(summary.total_expense)),
+        ("Balance", float(summary.balance)),
         ("Transaction Count", summary.transaction_count),
         ("Income Transaction Count", income_count),
         ("Expense Transaction Count", expense_count),
@@ -142,8 +143,8 @@ def _write_category_summary(
 ) -> None:
     worksheet = workbook.create_sheet("Category Summary")
     worksheet.append(CATEGORY_SUMMARY_HEADERS)
-    groups: dict[tuple[str, str], list[float | int]] = defaultdict(
-        lambda: [0, 0.0]
+    groups: dict[tuple[str, str], list[int | Decimal]] = defaultdict(
+        lambda: [0, Decimal("0")]
     )
     for transaction in transactions:
         category = _resolved_name(
@@ -164,7 +165,7 @@ def _write_category_summary(
     for category, transaction_type in sorted(groups, key=category_order):
         count, total = groups[(category, transaction_type)]
         worksheet.append(
-            (category or None, transaction_type.title(), count, total)
+            (category or None, transaction_type.title(), count, float(total))
         )
     for cell in worksheet["D"][1:]:
         cell.number_format = AMOUNT_FORMAT

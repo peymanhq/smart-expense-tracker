@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 from threading import local
-from typing import Any, Iterator
+from typing import Any, Iterator, cast
 
 from id_generator import (
     calculate_next_display_id,
@@ -18,12 +18,16 @@ from search import find_transaction_by_display_id
 from transaction import Transaction
 from validators import (
     parse_utc_datetime,
+    AmountInput,
+    serialize_amount,
+    validate_amount,
     validate_optional_uuid,
+    validate_serialized_amount,
     validate_transaction_date,
 )
 
 DATA_FILE = Path("data") / "transactions.json"
-TRANSACTION_SCHEMA_VERSION = 3
+TRANSACTION_SCHEMA_VERSION = 4
 _LOCK_STATE = local()
 
 
@@ -36,7 +40,9 @@ def _lock_file(lock_file) -> None:
             lock_file.write(b"\0")
             lock_file.flush()
         lock_file.seek(0)
-        msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+        msvcrt.locking(  # type: ignore[attr-defined]
+            lock_file.fileno(), msvcrt.LK_LOCK, 1  # type: ignore[attr-defined]
+        )
         return
 
     import fcntl
@@ -49,7 +55,9 @@ def _unlock_file(lock_file) -> None:
         import msvcrt
 
         lock_file.seek(0)
-        msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+        msvcrt.locking(  # type: ignore[attr-defined]
+            lock_file.fileno(), msvcrt.LK_UNLCK, 1  # type: ignore[attr-defined]
+        )
         return
 
     import fcntl
@@ -106,11 +114,11 @@ def _empty_document() -> dict[str, Any]:
 
 def _normalize_document(raw_data: Any) -> dict[str, Any]:
     if isinstance(raw_data, list):
-        transaction_data = raw_data
+        legacy_transaction_data = raw_data
         next_display_id = calculate_next_display_id(
             [
                 item.get("display_id", "")
-                for item in transaction_data
+                for item in legacy_transaction_data
                 if isinstance(item, dict)
                 and isinstance(item.get("display_id", ""), str)
             ]
@@ -118,7 +126,7 @@ def _normalize_document(raw_data: Any) -> dict[str, Any]:
         return {
             "schema_version": 1,
             "metadata": {"next_display_id": next_display_id},
-            "transactions": transaction_data,
+            "transactions": legacy_transaction_data,
         }
 
     if not isinstance(raw_data, dict):
@@ -131,19 +139,19 @@ def _normalize_document(raw_data: Any) -> dict[str, Any]:
             "Transaction data must contain metadata and transactions sections."
         )
 
-    schema_version = raw_data.get(
+    raw_schema_version = raw_data.get(
         "schema_version",
         metadata.get("schema_version", 1),
     )
     if (
-        not isinstance(schema_version, int)
-        or isinstance(schema_version, bool)
-        or schema_version < 1
+        not isinstance(raw_schema_version, int)
+        or isinstance(raw_schema_version, bool)
+        or raw_schema_version < 1
     ):
         raise StorageError("Transaction schema_version must be a positive integer.")
-    if schema_version > TRANSACTION_SCHEMA_VERSION:
+    if raw_schema_version > TRANSACTION_SCHEMA_VERSION:
         raise StorageError(
-            f"Unsupported transaction schema version {schema_version}; "
+            f"Unsupported transaction schema version {raw_schema_version}; "
             f"this application supports up to version {TRANSACTION_SCHEMA_VERSION}."
         )
 
@@ -154,17 +162,17 @@ def _normalize_document(raw_data: Any) -> dict[str, Any]:
     ):
         raise StorageError("Conflicting transaction schema_version values.")
 
-    next_display_id = metadata.get("next_display_id")
+    raw_next_display_id = metadata.get("next_display_id")
     if (
-        not isinstance(next_display_id, int)
-        or isinstance(next_display_id, bool)
-        or next_display_id < 1
+        not isinstance(raw_next_display_id, int)
+        or isinstance(raw_next_display_id, bool)
+        or raw_next_display_id < 1
     ):
         raise StorageError("metadata.next_display_id must be a positive integer.")
 
     return {
-        "schema_version": schema_version,
-        "metadata": {"next_display_id": next_display_id},
+        "schema_version": raw_schema_version,
+        "metadata": {"next_display_id": raw_next_display_id},
         "transactions": transaction_data,
     }
 
@@ -242,6 +250,14 @@ def _deserialize_transactions(document: dict[str, Any]) -> list[Transaction]:
                 record.get("category_id"),
                 "category_id",
             )
+            if document["schema_version"] >= 4:
+                record["amount"] = validate_serialized_amount(
+                    record.get("amount")
+                )
+            else:
+                record["amount"] = validate_amount(
+                    cast(AmountInput, record.get("amount"))
+                )
             transaction = Transaction(**record)
             text_fields = {
                 "id": transaction.id,
@@ -254,11 +270,6 @@ def _deserialize_transactions(document: dict[str, Any]) -> list[Transaction]:
             for field_name, value in text_fields.items():
                 if not isinstance(value, str):
                     raise ValueError(f"{field_name} must be text.")
-            if (
-                not isinstance(transaction.amount, (int, float))
-                or isinstance(transaction.amount, bool)
-            ):
-                raise ValueError("amount must be numeric.")
             transactions.append(transaction)
         except (TypeError, ValueError) as error:
             raise StorageError(
@@ -293,7 +304,7 @@ def _serialize_transaction(transaction: Transaction) -> dict[str, Any]:
         "id": transaction.id,
         "display_id": transaction.display_id,
         "type": transaction.type,
-        "amount": transaction.amount,
+        "amount": serialize_amount(transaction.amount),
         "category": transaction.category,
         "category_id": transaction.category_id,
         "account": transaction.account,

@@ -2,9 +2,10 @@
 
 from dataclasses import dataclass
 from datetime import date, datetime
+from decimal import Decimal
 import unicodedata
 
-from validators import validate_transaction_date, validate_utc_datetime
+from validators import validate_amount, validate_transaction_date, validate_utc_datetime
 
 
 @dataclass
@@ -14,7 +15,7 @@ class Transaction:
     id: str
     display_id: str
     type: str
-    amount: float
+    amount: Decimal
     category: str
     account: str
     description: str
@@ -26,6 +27,7 @@ class Transaction:
 
     def __post_init__(self) -> None:
         """Enforce typed values without consulting the system clock."""
+        self.amount = validate_amount(self.amount)
         if validate_transaction_date(self.transaction_date) is not self.transaction_date:
             raise ValueError("transaction_date must be a datetime.date.")
 
@@ -35,7 +37,7 @@ class Transaction:
             validate_utc_datetime(self.updated_at, "updated_at")
 
 
-TransactionComparisonKey = tuple[date, str, float, str, str, str]
+TransactionComparisonKey = tuple[date, str, Decimal, str, str, str]
 
 
 def normalized_transaction_description(description: str) -> str:

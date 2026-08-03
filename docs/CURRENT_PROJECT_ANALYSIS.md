@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-Smart Expense Tracker v1.5.0 is the current released version. SQLite is now
+Smart Expense Tracker v1.5.1 is the current released version. SQLite is now
 the default storage backend, while JSON remains available through an explicit
 compatibility mode. The complete Account, Category, and Transaction repository
 set supports both storage backends through the same application-service layer.
@@ -35,10 +35,11 @@ main.py
 The completed date feature adds a selected-date workspace, historical entry,
 date-scoped CRUD, explicit date movement, populated-date browsing, exact/range
 search, and daily/range reports. Transaction mutations are locked, creation
-allocates display IDs atomically, and schema version 3 remains compatible with
-legacy transaction files.
+allocates display IDs atomically, and JSON schema versions 1 through 3 remain
+compatible with legacy transaction files.
 
-The current suite contains 610 passing tests. Persistence, migration,
+The current suite contains 617 passing tests with a 90% coverage gate and
+source-wide static type checking. Persistence, migration,
 packaging, and Excel tests use temporary workspaces and do not modify runtime
 JSON data.
 
@@ -115,7 +116,7 @@ insert occurs after preview.
 
 ## Compatibility
 
-Transaction schema version 3 stores `transaction_date`, timestamps, and
+Transaction schema version 4 stores `transaction_date`, timestamps, and
 optional Account and Category UUID references. Missing schema metadata is
 treated as version 1. Schema versions 1 and 2, legacy top-level lists, and
 legacy `date` fields remain readable. Missing reference fields load as `None`.
@@ -123,8 +124,9 @@ legacy `date` fields remain readable. Missing reference fields load as `None`.
 Matching `date` and `transaction_date` fields are accepted; conflicts fail.
 Missing historical timestamps load as `None`, are never invented, and
 `created_at=None` remains missing after an update. Reads never migrate data.
-The next successful mutation writes schema version 3 and represents missing
-references explicitly as JSON `null`.
+The next successful mutation writes schema version 4, stores amounts as
+canonical decimal text, and represents missing references explicitly as JSON
+`null`. Schema version 3 remains readable.
 
 Unsupported future schema versions and malformed records raise controlled
 storage errors instead of being skipped or overwritten.
@@ -141,12 +143,6 @@ storage errors instead of being skipped or overwritten.
 - Broad deterministic test coverage using disposable data paths
 
 ## Remaining Risks and Deferred Work
-
-### Exact Money
-
-Amounts still use binary `float`. Replacing them with `Decimal` or integer minor
-units requires an explicit migration and rounding policy and remains separate
-future work.
 
 ### Managed References
 
@@ -172,8 +168,8 @@ soft there. Primary SQLite storage enforces managed-reference foreign keys.
 
 Locking prevents lost read-modify-write mutations, but every JSON transaction
 change still rewrites the whole file. SQLite is primary with atomic SQL
-transactions and indexed queries. Schema upgrades, automated backups, and
-merge-style migration are not implemented.
+transactions and indexed queries. The first SQLite schema upgrade is
+implemented; automated backups and merge-style migration are not implemented.
 
 ### Operational Recovery
 
@@ -188,12 +184,13 @@ retention, encryption, and off-device copies remain operational policy.
 
 `pyproject.toml` now defines a PEP 517 setuptools build over the existing flat
 modules, runtime dependencies, the `expense-tracker` entry point, and the
-development extra. GitHub Actions checks tests, compilation, changed-content
-whitespace, package builds, and a deterministic installed-command smoke test on
-Python 3.10 and 3.13.
+development extra. GitHub Actions checks tests with a 90% source-coverage
+floor, static types across all source modules, compilation, changed-content
+whitespace, package builds, and a deterministic installed-command smoke test
+on Python 3.10 and 3.13.
 
-Linting, static type checking, coverage thresholds, package publication, and
-release automation remain deliberately deferred.
+Linting, package publication, and release automation remain deliberately
+deferred.
 
 ### Excel Reporting Adapter
 
@@ -225,16 +222,15 @@ input or output. `main.py` is the current CLI adapter, so a future Telegram
 adapter can reuse these boundaries without owning workbook or persistence
 logic.
 
-Charts, PDF output, and exact-money migration remain deferred.
+Charts and PDF output remain deferred.
 
 ## Recommended Next Work
 
 Keep future work scoped and incremental:
 
 1. Define backup rotation/retention and release rollback policy.
-2. Define exact-money representation and migration.
-3. Add a first SQLite schema-upgrade contract before schema version 2 exists.
-4. Consider linting, typing, and coverage policy as separately scoped tooling.
+2. Add rollback and corruption tests for each future SQLite schema upgrade.
+3. Add linting as a separately scoped tooling change.
 
 Multiple currencies, transfers, dashboards, a GUI, and external interfaces
 remain roadmap items and are not implemented by the date-based transaction

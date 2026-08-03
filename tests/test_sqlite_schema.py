@@ -1,6 +1,7 @@
 """SQLite schema version and data-integrity contracts."""
 
 import sqlite3
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -76,7 +77,7 @@ def insert_transaction(
     transaction_id: str = TRANSACTION_ID,
     display_id: str = "T-0001",
     transaction_type: str = "expense",
-    amount: float = 12.5,
+    amount: str | float = "12.5",
     account_id: str | None = ACCOUNT_ID,
     category_id: str | None = CATEGORY_ID,
 ) -> None:
@@ -101,7 +102,37 @@ def insert_transaction(
     )
 
 
-def test_empty_database_initializes_to_version_one(tmp_path: Path) -> None:
+def initialize_version_one_schema(database: SQLiteDatabase) -> None:
+    old_amount = """amount REAL NOT NULL CHECK (amount > 0),"""
+    new_amount = """amount TEXT NOT NULL CHECK (
+            typeof(amount) = 'text'
+            AND length(amount) > 0
+            AND amount = trim(amount)
+            AND amount NOT GLOB '*[^0-9.]*'
+            AND length(amount) - length(replace(amount, '.', '')) <= 1
+            AND substr(amount, 1, 1) <> '.'
+            AND substr(amount, -1, 1) <> '.'
+            AND amount GLOB '*[1-9]*'
+            AND (
+                substr(amount, 1, 1) <> '0'
+                OR substr(amount, 2, 1) = '.'
+            )
+            AND (
+                instr(amount, '.') = 0
+                OR substr(amount, -1, 1) <> '0'
+            )
+        ),"""
+    with database.transaction() as connection:
+        for current_statement in sqlite_schema._SCHEMA_STATEMENTS:
+            statement = current_statement.replace(new_amount, old_amount)
+            statement = statement.replace(
+                "VALUES (1, 2)",
+                "VALUES (1, 1)",
+            )
+            connection.execute(statement)
+
+
+def test_empty_database_initializes_to_version_two(tmp_path: Path) -> None:
     database = SQLiteDatabase(tmp_path / "database.sqlite3")
 
     initialize_schema(database)
@@ -116,7 +147,7 @@ def test_empty_database_initializes_to_version_one(tmp_path: Path) -> None:
                 "SELECT entity_type, next_value FROM display_id_counters"
             )
         }
-    assert version == SCHEMA_VERSION == 1
+    assert version == SCHEMA_VERSION == 2
     assert counters == {"account": 1, "category": 1, "transaction": 1}
 
 
@@ -132,13 +163,36 @@ def test_repeated_initialization_is_idempotent(database: SQLiteDatabase) -> None
         ).fetchone()["count"] == 1
 
 
-def test_valid_version_one_schema_is_accepted(
+def test_version_one_real_amounts_migrate_to_decimal_text(tmp_path: Path) -> None:
+    database = SQLiteDatabase(tmp_path / "database.sqlite3")
+    initialize_version_one_schema(database)
+    with database.transaction() as connection:
+        insert_account(connection)
+        insert_category(connection)
+        insert_transaction(connection, amount=0.1)
+
+    initialize_schema(database)
+
+    with database.connection() as connection:
+        version = connection.execute(
+            "SELECT schema_version FROM schema_metadata"
+        ).fetchone()["schema_version"]
+        amount_row = connection.execute(
+            "SELECT amount, typeof(amount) AS storage_type FROM transactions"
+        ).fetchone()
+    assert version == 2
+    assert amount_row["amount"] == "0.1"
+    assert amount_row["storage_type"] == "text"
+    assert Decimal(amount_row["amount"]) == Decimal("0.1")
+
+
+def test_valid_version_two_schema_is_accepted(
     database: SQLiteDatabase,
 ) -> None:
     validate_schema(database)
 
 
-@pytest.mark.parametrize("version", [2, 7])
+@pytest.mark.parametrize("version", [3, 7])
 def test_newer_schema_is_rejected(
     database: SQLiteDatabase,
     version: int,
@@ -475,7 +529,19 @@ def test_transaction_constraints_reject_duplicate_display_type_and_amount(
             "00000000-0000-4000-8000-000000000008",
             "T-0003",
             "expense",
-            0.0,
+            "0",
+        ),
+        (
+            "00000000-0000-4000-8000-000000000009",
+            "T-0004",
+            "expense",
+            "01",
+        ),
+        (
+            "00000000-0000-4000-8000-000000000010",
+            "T-0005",
+            "expense",
+            "1.20",
         ),
     ):
         with pytest.raises(StorageError):
@@ -487,6 +553,23 @@ def test_transaction_constraints_reject_duplicate_display_type_and_amount(
                     transaction_type=transaction_type,
                     amount=amount,
                 )
+
+
+def test_decimal_text_constraint_does_not_underflow(
+    database: SQLiteDatabase,
+) -> None:
+    tiny_amount = "0." + ("0" * 400) + "1"
+    with database.transaction() as connection:
+        insert_account(connection)
+        insert_category(connection)
+        insert_transaction(connection, amount=tiny_amount)
+
+    with database.connection() as connection:
+        stored = connection.execute(
+            "SELECT amount FROM transactions WHERE id = ?",
+            (TRANSACTION_ID,),
+        ).fetchone()["amount"]
+    assert stored == tiny_amount
 
 
 def test_invalid_foreign_keys_are_rejected(database: SQLiteDatabase) -> None:

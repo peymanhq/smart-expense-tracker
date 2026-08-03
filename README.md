@@ -7,7 +7,7 @@ workspaces and an explicit JSON compatibility mode.
 
 ## Version status
 
-**Smart Expense Tracker v1.5.0** is the current released version. It uses
+**Smart Expense Tracker v1.5.1** is the current released version. It uses
 SQLite as the default storage backend, automatically migrates valid legacy JSON
 data on first startup when no SQLite database exists, and keeps JSON available
 through an explicit compatibility override.
@@ -344,11 +344,13 @@ category of the same type has that name.
 ## Running tests
 
 ```bash
-python -m pytest -q
+python -m pytest --cov --cov-report=term -q
+python -m mypy
 ```
 
 Tests use pytest temporary paths and do not write to application data files.
-The v1.5.0 release verification suite contains 610 passing tests.
+The v1.5.1 release verification suite contains 617 passing tests and enforces
+at least 90% source coverage plus static type checking of all source modules.
 Compile the source and verify whitespace:
 
 ```bash
@@ -372,7 +374,7 @@ stored in `data/transactions.json`. The stabilized format is:
 
 ```json
 {
-    "schema_version": 3,
+    "schema_version": 4,
     "metadata": {
         "next_display_id": 3
     },
@@ -381,7 +383,7 @@ stored in `data/transactions.json`. The stabilized format is:
             "id": "1a26f4c8-2bcc-4ad4-9f79-3bf07bc8a5ef",
             "display_id": "T-0001",
             "type": "expense",
-            "amount": 12.5,
+            "amount": "12.5",
             "category": "Food",
             "category_id": "category-uuid-or-null",
             "account": "Cash",
@@ -407,10 +409,10 @@ next saved transaction uses `T-0004`. Older files containing only a JSON list
 remain readable. Their safe next value is derived from the highest stored
 display ID. Legacy `date` fields map to `transaction_date`; missing historical
 timestamps remain `null` rather than being invented. Reads never migrate data,
-while the next successful mutation writes schema version 3. Schema versions 1
-and 2 load missing `account_id` and `category_id` values as `None`; schema
-version 3 writes missing references explicitly as `null`. The required account
-and category names remain stored snapshots and fallbacks.
+while the next successful mutation writes schema version 4. Schema versions 1
+through 3 remain readable with their numeric amounts; schema version 4 stores
+canonical decimal text and writes missing references explicitly as `null`.
+The required account and category names remain stored snapshots and fallbacks.
 
 A missing or blank data file is treated as an empty dataset. Malformed JSON or
 an invalid top-level structure raises a controlled storage error and is not
@@ -466,9 +468,17 @@ ID. If state is missing, it is recovered from the highest stored category ID.
 - Referential integrity remains soft when the JSON compatibility backend is
   selected; primary SQLite storage enforces managed foreign keys
 - Transfers are not implemented
-- Transaction amounts still use `float`; exact `Decimal` money is deferred
+- Transaction amounts use exact Python `Decimal` values and canonical decimal
+  text in both current persistence schemas
 
 ## Release history
+
+### v1.5.1
+
+- Exact `Decimal` transaction amounts with automatic JSON/SQLite schema upgrades.
+- Static type checking for all source modules in CI.
+- A 90% minimum source-coverage gate in CI.
+- MIT package licensing metadata.
 
 ### v1.5.0
 

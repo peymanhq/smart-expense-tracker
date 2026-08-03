@@ -1,11 +1,13 @@
 """=====================Inputs======================="""
 
 from datetime import date, datetime
+from typing import cast
 
 from transaction import Transaction
 from id_generator import generator_transaction_id
 
 from validators import (
+    AmountInput,
     parse_utc_datetime,
     validate_amount,
     validate_optional_uuid,
@@ -17,7 +19,7 @@ from validators import (
 
 def create_transaction(
     transaction_type: str,
-    amount: str | float | int,
+    amount: AmountInput,
     category: str,
     account: str,
     description: str,
@@ -30,19 +32,19 @@ def create_transaction(
     category_id: str | None = None,
 ) -> Transaction:
 
-    amount = validate_amount(amount)
-    transaction_type = validate_transaction_type(transaction_type)
-    category = validate_required_text(category, "Category")
-    account = validate_required_text(account, "Account")
-    account_id = validate_optional_uuid(account_id, "Account ID")
-    category_id = validate_optional_uuid(category_id, "Category ID")
-    transaction_date = validate_transaction_date(transaction_date)
-    created_at = parse_utc_datetime(created_at, "created_at")
-    updated_at = parse_utc_datetime(updated_at, "updated_at")
+    accepted_amount = validate_amount(amount)
+    accepted_type = validate_transaction_type(transaction_type)
+    accepted_category = validate_required_text(category, "Category")
+    accepted_account = validate_required_text(account, "Account")
+    accepted_account_id = validate_optional_uuid(account_id, "Account ID")
+    accepted_category_id = validate_optional_uuid(category_id, "Category ID")
+    accepted_date = validate_transaction_date(transaction_date)
+    accepted_created_at = parse_utc_datetime(created_at, "created_at")
+    accepted_updated_at = parse_utc_datetime(updated_at, "updated_at")
 
-    if created_at is None and transaction_id is None:
+    if accepted_created_at is None and transaction_id is None:
         raise ValueError("New transactions require created_at and updated_at.")
-    if updated_at is None:
+    if accepted_updated_at is None:
         raise ValueError("Transactions require updated_at.")
 
     if transaction_id is None:
@@ -50,15 +52,15 @@ def create_transaction(
 
     return Transaction(
         id=transaction_id,
-        display_id=display_id,
-        type=transaction_type,
-        amount=amount,
-        category=category,
-        account=account,
+        display_id=cast(str, display_id),
+        type=accepted_type,
+        amount=accepted_amount,
+        category=accepted_category,
+        account=accepted_account,
         description=description.strip(),
-        transaction_date=transaction_date,
-        created_at=created_at,
-        updated_at=updated_at,
-        account_id=account_id,
-        category_id=category_id,
+        transaction_date=accepted_date,
+        created_at=accepted_created_at,
+        updated_at=accepted_updated_at,
+        account_id=accepted_account_id,
+        category_id=accepted_category_id,
     )

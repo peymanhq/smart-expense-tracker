@@ -16,7 +16,10 @@ from transaction_repository import (
 )
 from validators import (
     parse_utc_datetime,
+    serialize_amount,
+    validate_amount,
     validate_optional_uuid,
+    validate_serialized_amount,
     validate_transaction_date,
 )
 
@@ -47,14 +50,12 @@ def _validate_transaction(transaction: Transaction) -> None:
         raise StorageError(
             "SQLite Transaction type must be income or expense."
         )
-    if (
-        not isinstance(transaction.amount, (int, float))
-        or isinstance(transaction.amount, bool)
-        or transaction.amount <= 0
-    ):
+    try:
+        validate_amount(transaction.amount)
+    except ValueError as error:
         raise StorageError(
             "SQLite Transaction amount must be a positive number."
-        )
+        ) from error
     for field_name in ("category", "account", "description"):
         if not isinstance(getattr(transaction, field_name), str):
             raise StorageError(
@@ -82,7 +83,7 @@ def _transaction_from_row(row: sqlite3.Row) -> Transaction:
             id=row["id"],
             display_id=row["display_id"],
             type=row["type"],
-            amount=row["amount"],
+            amount=validate_serialized_amount(row["amount"]),
             category=row["category"],
             category_id=validate_optional_uuid(row["category_id"], "category_id"),
             account=row["account"],
@@ -131,7 +132,7 @@ def _insert(connection: sqlite3.Connection, transaction: Transaction) -> None:
             transaction.id,
             transaction.display_id,
             transaction.type,
-            transaction.amount,
+            serialize_amount(transaction.amount),
             transaction.category,
             transaction.category_id,
             transaction.account,
@@ -327,7 +328,7 @@ class SQLiteTransactionRepository:
                 """,
                 (
                     persisted.type,
-                    persisted.amount,
+                    serialize_amount(persisted.amount),
                     persisted.category,
                     persisted.category_id,
                     persisted.account,

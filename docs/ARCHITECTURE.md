@@ -10,7 +10,7 @@ The long-term objective is to build a maintainable, testable, and extensible fin
 
 ---
 
-## Current Architecture (v1.5.0)
+## Current Architecture (v1.5.1)
 
 The current application follows this structure:
 
@@ -67,7 +67,7 @@ main.py
 | `sqlite_category_repository.py` | Primary SQLite implementation of the Category repository protocol |
 | `sqlite_transaction_repository.py` | Primary SQLite implementation of the Transaction repository protocol |
 | `sqlite_database.py` | SQLite path, connection, and transaction foundation |
-| `sqlite_schema.py` | SQLite schema version 1 initialization and validation |
+| `sqlite_schema.py` | SQLite schema version 2 initialization, v1 migration, and validation |
 | `sqlite_migration.py` | Non-destructive, all-or-nothing JSON snapshot migration |
 | `sqlite_backup.py` | Validated atomic SQLite backup and offline restore operations |
 | `transaction.py` | Typed, passive Transaction data model |
@@ -149,7 +149,7 @@ row numbers and ignore unrelated identity/timestamp columns.
 existing NFC/case-folded comparison keys. It requires active records and a
 Category compatible with the normalized transaction type. It computes the
 same deterministic duplicate key for stored and candidate transactions:
-financial date, type, float amount, normalized description, Account UUID, and
+financial date, type, exact decimal amount, normalized description, Account UUID, and
 Category UUID. Resolvable legacy name snapshots participate in the stored
 duplicate check.
 
@@ -314,7 +314,7 @@ The current document structure is:
 
 ```json
 {
-    "schema_version": 3,
+    "schema_version": 4,
     "metadata": {
         "next_display_id": 3
     },
@@ -323,7 +323,7 @@ The current document structure is:
             "id": "internal-uuid",
             "display_id": "T-0001",
             "type": "expense",
-            "amount": 12.5,
+            "amount": "12.5",
             "category": "Food",
             "category_id": "category-uuid-or-null",
             "account": "Cash",
@@ -348,11 +348,11 @@ legacy transactions.
 highest transaction does not decrease it, so a deleted display ID is not
 reused. Legacy files whose top level is a transaction list remain readable;
 their next safe value is derived from the highest valid display ID, and they
-are migrated to schema version 3 on the next successful mutation. Missing
-schema metadata is version 1, and schema versions 1 and 2 load missing reference
-fields as `None`. Legacy `date` maps to `transaction_date`; historical missing
-timestamps remain `None`, and reads never rewrite files. Schema version 3
-writes missing references explicitly as JSON `null`.
+are migrated to schema version 4 on the next successful mutation. Missing
+schema metadata is version 1, and schema versions 1 through 3 remain readable.
+Legacy `date` maps to `transaction_date`; historical missing timestamps remain
+`None`, and reads never rewrite files. Schema version 4 writes exact amounts as
+canonical decimal text and missing references explicitly as JSON `null`.
 
 Missing and empty files represent an empty dataset. Malformed JSON, invalid
 top-level structures, invalid metadata, and malformed transaction entries
@@ -493,14 +493,12 @@ foreign keys use restrictive update/delete behavior; cascading deletion is not
 introduced. Indexes cover display IDs, active managed-record lookup, Category
 type, Transaction date/type, and both managed UUID references.
 
-Amounts use SQLite `REAL` to preserve the application's current Python
-`float` behavior. Moving to decimal text or integer minor units requires a
-separate domain-level decision. Transaction dates use ISO `YYYY-MM-DD` text,
+Amounts use canonical decimal `TEXT` and become Python `Decimal` values at the
+repository boundary. Existing schema-version-1 `REAL` amounts migrate
+atomically to schema version 2 during initialization. Transaction dates use ISO `YYYY-MM-DD` text,
 and timestamps use canonical ISO-8601 UTC text. Full calendar, timestamp,
 and normalization validation remains in the validation/service layer and
-repository row-conversion code rather than brittle SQL expressions. Version 1
-does not claim SQL-level finite-number validation; tightening non-finite float
-behavior requires a separate application decision.
+repository row-conversion code rather than brittle SQL expressions.
 
 Low-level SQLite failures are chained beneath backend-neutral `StorageError`
 exceptions. Unsupported versions use
@@ -548,13 +546,13 @@ implementation with JSON, and every failed bulk write rolls back all rows and
 counter changes. Replacement preserves the stored UUID, display ID, and
 creation timestamp. Primary SQLite composition, compatibility backend
 selection, and guarded automatic JSON migration are implemented. Automated
-backup scheduling/retention, merge-style migration, and schema upgrades remain
-separate work.
+backup scheduling/retention, merge-style migration, and future schema upgrades
+remain separate work.
 
 ### Backup and Restore Boundary
 
 `sqlite_backup.py` provides the installed `expense-tracker-storage` command.
-Backup and restore validate schema version 1 before copying. They use SQLite's
+Backup and restore validate schema version 2 before copying. They use SQLite's
 online backup API to produce a private same-directory temporary database,
 validate and flush that complete copy, then atomically replace the destination.
 An existing backup is protected unless `--overwrite` is explicit. Replacing a
@@ -843,7 +841,8 @@ workspace; records from another workspace are not discovered automatically.
 
 GitHub Actions is delivery infrastructure rather than business logic. For
 pushes and pull requests targeting `main`, its Python 3.10/3.13 matrix installs
-`.[dev]`, runs the complete pytest suite, compiles `src` and `tests`, checks the
+`.[dev]`, runs the complete pytest suite with a 90% coverage floor, type-checks
+all source modules, compiles `src` and `tests`, checks the
 event's changed content for whitespace errors, builds both distributions,
 installs the built wheel into a clean environment, and smoke-tests its console
 command with deterministic exit input.

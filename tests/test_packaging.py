@@ -33,16 +33,21 @@ def test_project_metadata_declares_release_and_dependencies() -> None:
     project = load_pyproject()["project"]
 
     assert project["name"] == "smart-expense-tracker"
-    assert project["version"] == "1.5.0"
+    assert project["version"] == "1.5.1"
     assert project["requires-python"] == ">=3.10"
     assert project["license"] == "MIT"
     assert project["license-files"] == ["LICENSE"]
     assert project["dependencies"] == ["openpyxl>=3.1,<4.0"]
     assert project["optional-dependencies"]["dev"] == [
         "build>=1.2,<2.0",
+        "mypy>=1.11,<2.0",
         "pytest>=8.0,<9.0",
+        "pytest-cov>=5.0,<7.0",
         "tomli>=2.0,<3.0; python_version < '3.11'",
     ]
+
+    assert load_pyproject()["tool"]["coverage"]["report"]["fail_under"] == 90
+    assert load_pyproject()["tool"]["mypy"]["files"] == ["src"]
 
 
 def test_console_script_points_to_existing_main_callable() -> None:

@@ -1,17 +1,44 @@
 import re
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
+from typing import TypeAlias
 from uuid import UUID
 
+AmountInput: TypeAlias = str | float | int | Decimal
 
-def validate_amount(amount: str | float | int) -> float:
-    try:
-        amount = float(amount)
-    except (TypeError, ValueError):
+
+def validate_amount(amount: AmountInput) -> Decimal:
+    if isinstance(amount, bool):
         raise ValueError("Amount must be a valid number.")
+    try:
+        normalized = Decimal(str(amount))
+    except (InvalidOperation, TypeError, ValueError) as error:
+        raise ValueError("Amount must be a valid number.") from error
 
-    if amount <= 0:
+    if not normalized.is_finite():
+        raise ValueError("Amount must be a finite number.")
+    if normalized <= 0:
         raise ValueError("Amount must be greater than zero.")
 
+    return normalized
+
+
+def serialize_amount(amount: Decimal) -> str:
+    """Return one non-exponent decimal representation for persistence."""
+    normalized = validate_amount(amount)
+    text = format(normalized, "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text
+
+
+def validate_serialized_amount(value: object) -> Decimal:
+    """Parse one canonical decimal string from a current storage schema."""
+    if not isinstance(value, str):
+        raise ValueError("Stored amount must be canonical decimal text.")
+    amount = validate_amount(value)
+    if serialize_amount(amount) != value:
+        raise ValueError("Stored amount must be canonical decimal text.")
     return amount
 
 

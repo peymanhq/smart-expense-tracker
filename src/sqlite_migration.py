@@ -23,6 +23,7 @@ from storage import (
     transaction_file_lock,
 )
 from transaction import Transaction
+from validators import serialize_amount
 
 JSON_WORKSPACE_FILENAMES = (
     "accounts.json",
@@ -173,7 +174,7 @@ def _destination_matches(
             item.id,
             item.display_id,
             item.type,
-            item.amount,
+            serialize_amount(item.amount),
             item.category,
             item.category_id,
             item.account,
@@ -238,7 +239,7 @@ def _insert_snapshot(
                 item.id,
                 item.display_id,
                 item.type,
-                item.amount,
+                serialize_amount(item.amount),
                 item.category,
                 item.category_id,
                 item.account,

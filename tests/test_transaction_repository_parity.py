@@ -3,6 +3,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 import sqlite3
 from typing import Callable
@@ -31,6 +32,7 @@ from transaction_repository import (
     TransactionRepository,
 )
 from transaction_service import TransactionService
+from validators import AmountInput
 
 TODAY = date(2026, 8, 2)
 PAST = date(2026, 7, 30)
@@ -46,7 +48,7 @@ def candidate(
     name: str,
     *,
     transaction_date: date = TODAY,
-    amount: float = 10.0,
+    amount: AmountInput = 10.0,
     description: str = "Lunch",
     account_id: str | None = None,
     category_id: str | None = None,
@@ -114,10 +116,13 @@ def test_empty_create_lookup_order_and_restart(
     assert repository.list_by_date(TODAY) == []
     assert repository.list_date_summaries() == []
 
-    first = repository.create(candidate("first", transaction_date=PAST))
+    first = repository.create(
+        candidate("first", transaction_date=PAST, amount=Decimal("0.10"))
+    )
     second = repository.create(candidate("second"))
 
     assert [first.display_id, second.display_id] == ["T-0001", "T-0002"]
+    assert first.amount == Decimal("0.10")
     assert repository.get_by_id(first.id) == first
     assert repository.get_by_id(record_id("missing")) is None
     assert repository.get_by_display_id(" t-0001 ") == first

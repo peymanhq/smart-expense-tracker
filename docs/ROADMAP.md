@@ -199,6 +199,21 @@ Released 2026-08-03 (`1.5.0`).
 - Read-only migration rehearsal against the current workspace with complete
   cross-backend record equality and unchanged JSON source metadata
 
+# Smart Expense Tracker v1.5.1
+
+## Status
+
+Released 2026-08-03 (`1.5.1`).
+
+## Implemented Scope
+
+- Exact `Decimal` amounts throughout the domain and financial calculations
+- JSON schema version 4 with canonical decimal-text amounts
+- Atomic SQLite schema version 1 to 2 migration from `REAL` to decimal `TEXT`
+- Static type checking across all source modules in CI
+- A 90% minimum source-coverage gate in CI
+- MIT package licensing metadata
+
 ## Next Planned Version
 
 v1.6.0

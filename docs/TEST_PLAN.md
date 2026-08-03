@@ -149,7 +149,8 @@ paths.
 Run the suite from the repository root:
 
 ```bash
-python -m pytest -q
+python -m pytest --cov --cov-report=term -q
+python -m mypy
 ```
 
 Local and CI quality gates also run:
@@ -263,6 +264,23 @@ the source JSON sizes and modification times remained unchanged.
 
 ---
 
+# v1.5.1 Release Result
+
+The v1.5.1 release suite completes successfully:
+
+```text
+617 passed
+91% total source coverage (90% required)
+Success: no issues found in 36 source files
+```
+
+Additional coverage verifies canonical `Decimal` JSON round trips, rejection
+of non-canonical current-schema amounts, automatic SQLite v1 `REAL` to v2
+decimal-`TEXT` migration, and continued legacy JSON compatibility. CI runs the
+coverage threshold and static type checker on Python 3.10 and 3.13.
+
+---
+
 # Manual and Release Verification
 
 The Date-based Transaction Management verification also confirms:
@@ -296,9 +314,9 @@ The Date-based Transaction Management verification also confirms:
 
 # Future Testing
 
-Linting, static typing, and coverage policy remain planned. Future interfaces
-such as a GUI or Telegram bot will require end-to-end tests. SQLite, Decimal
-money, PDF, charts, and other integration-specific tests remain future work.
+Linting remains planned. Future interfaces such as a GUI or Telegram bot will
+require end-to-end tests. PDF, charts, and other integration-specific tests
+remain future work.
 Excel export coverage is included in v1.2.0; packaging and CI coverage is
 included in v1.3.0; Excel import and template coverage is included in v1.4.0.
 

@@ -2,6 +2,7 @@ import json
 import os
 from dataclasses import replace
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -69,13 +70,14 @@ def test_save_and_load_transactions_with_metadata() -> None:
     assert storage.load_transactions() == [transaction]
     document = json.loads(storage.DATA_FILE.read_text(encoding="utf-8"))
     assert document["metadata"]["next_display_id"] == 2
-    assert document["schema_version"] == 3
+    assert document["schema_version"] == 4
+    assert document["transactions"][0]["amount"] == "10"
     assert document["transactions"][0]["id"] == "uuid-1"
     assert document["transactions"][0]["account_id"] is None
     assert document["transactions"][0]["category_id"] is None
 
 
-def test_schema_three_reference_ids_round_trip() -> None:
+def test_schema_four_reference_ids_round_trip() -> None:
     transaction = replace(
         make_transaction(),
         account_id=ACCOUNT_ID,
@@ -86,7 +88,7 @@ def test_schema_three_reference_ids_round_trip() -> None:
 
     document = json.loads(storage.DATA_FILE.read_text(encoding="utf-8"))
     stored = document["transactions"][0]
-    assert document["schema_version"] == 3
+    assert document["schema_version"] == 4
     assert stored["category"] == "Food"
     assert stored["category_id"] == CATEGORY_ID
     assert stored["account"] == "Cash"
@@ -221,13 +223,13 @@ def test_supported_schema_versions_load_missing_references_without_rewriting(
 def test_unsupported_future_schema_version_raises_without_writing() -> None:
     original = write_raw_document(
         {
-            "schema_version": 4,
+            "schema_version": 5,
             "metadata": {"next_display_id": 2},
             "transactions": [make_record()],
         }
     )
 
-    with pytest.raises(StorageError, match="Unsupported transaction schema version 4"):
+    with pytest.raises(StorageError, match="Unsupported transaction schema version 5"):
         storage.load_transactions()
 
     assert storage.DATA_FILE.read_text(encoding="utf-8") == original
@@ -445,7 +447,7 @@ def test_legacy_list_loads_and_migrates_on_next_write() -> None:
     storage.save_transaction(make_transaction("T-0008", "new-uuid"))
     migrated = json.loads(storage.DATA_FILE.read_text(encoding="utf-8"))
     assert migrated["metadata"]["next_display_id"] == 9
-    assert migrated["schema_version"] == 3
+    assert migrated["schema_version"] == 4
     assert len(migrated["transactions"]) == 2
     assert "date" not in migrated["transactions"][0]
     assert migrated["transactions"][0]["transaction_date"] == "2026-07-24"
@@ -453,6 +455,7 @@ def test_legacy_list_loads_and_migrates_on_next_write() -> None:
     assert migrated["transactions"][0]["updated_at"] is None
     assert migrated["transactions"][0]["account_id"] is None
     assert migrated["transactions"][0]["category_id"] is None
+    assert migrated["transactions"][0]["amount"] == "10"
 
 
 def test_schema_two_mutation_upgrades_with_explicit_null_references() -> None:
@@ -467,7 +470,7 @@ def test_schema_two_mutation_upgrades_with_explicit_null_references() -> None:
     storage.save_transaction(make_transaction("T-0002", "uuid-2"))
 
     migrated = json.loads(storage.DATA_FILE.read_text(encoding="utf-8"))
-    assert migrated["schema_version"] == 3
+    assert migrated["schema_version"] == 4
     assert migrated["metadata"]["next_display_id"] == 3
     assert len(migrated["transactions"]) == 2
     assert all(
@@ -475,6 +478,36 @@ def test_schema_two_mutation_upgrades_with_explicit_null_references() -> None:
         and transaction["category_id"] is None
         for transaction in migrated["transactions"]
     )
+    assert all(
+        transaction["amount"] == "10"
+        for transaction in migrated["transactions"]
+    )
+
+
+def test_schema_four_decimal_text_round_trips_exactly() -> None:
+    transaction = replace(make_transaction(), amount=Decimal("0.10"))
+
+    storage.save_transaction(transaction)
+
+    document = json.loads(storage.DATA_FILE.read_text(encoding="utf-8"))
+    assert document["transactions"][0]["amount"] == "0.1"
+    assert storage.load_transactions()[0].amount == Decimal("0.1")
+
+
+@pytest.mark.parametrize("amount", [10.0, "10.0", "01", "1e1"])
+def test_schema_four_rejects_noncanonical_amounts(amount: object) -> None:
+    original = write_raw_document(
+        {
+            "schema_version": 4,
+            "metadata": {"next_display_id": 2},
+            "transactions": [make_record(amount=amount)],
+        }
+    )
+
+    with pytest.raises(StorageError, match="canonical decimal text"):
+        storage.load_transactions()
+
+    assert storage.DATA_FILE.read_text(encoding="utf-8") == original
 
 
 def test_failed_mutation_does_not_partially_migrate_schema_two(

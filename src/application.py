@@ -185,16 +185,16 @@ def build_application(
         )
     if migrate_json and normalized_backend != "sqlite":
         raise ValueError("JSON migration is only valid with the sqlite backend.")
-    builder = (
-        build_json_application
-        if normalized_backend == "json"
-        else build_sqlite_application
-    )
-    options = {
-        "today_provider": today_provider,
-        "utc_now_provider": utc_now_provider,
-    }
     if normalized_backend == "sqlite":
-        options["migrate_json"] = migrate_json
-        options["auto_migrate_json"] = auto_migrate_json
-    return builder(workspace_root, **options)
+        return build_sqlite_application(
+            workspace_root,
+            migrate_json=migrate_json,
+            auto_migrate_json=auto_migrate_json,
+            today_provider=today_provider,
+            utc_now_provider=utc_now_provider,
+        )
+    return build_json_application(
+        workspace_root,
+        today_provider=today_provider,
+        utc_now_provider=utc_now_provider,
+    )

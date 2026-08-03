@@ -6,8 +6,9 @@ from dataclasses import dataclass
 
 from persistence_errors import StorageError, UnsupportedSchemaVersionError
 from sqlite_database import SQLiteDatabase
+from validators import serialize_amount, validate_amount
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _UUID_GLOB = (
     "[0-9a-f][0-9a-f][0-9a-f][0-9a-f]"
@@ -86,7 +87,24 @@ _SCHEMA_STATEMENTS = (
             {_display_id_check("display_id", "T")}
         ),
         type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
-        amount REAL NOT NULL CHECK (amount > 0),
+        amount TEXT NOT NULL CHECK (
+            typeof(amount) = 'text'
+            AND length(amount) > 0
+            AND amount = trim(amount)
+            AND amount NOT GLOB '*[^0-9.]*'
+            AND length(amount) - length(replace(amount, '.', '')) <= 1
+            AND substr(amount, 1, 1) <> '.'
+            AND substr(amount, -1, 1) <> '.'
+            AND amount GLOB '*[1-9]*'
+            AND (
+                substr(amount, 1, 1) <> '0'
+                OR substr(amount, 2, 1) = '.'
+            )
+            AND (
+                instr(amount, '.') = 0
+                OR substr(amount, -1, 1) <> '0'
+            )
+        ),
         category TEXT NOT NULL,
         category_id TEXT
             CHECK (category_id IS NULL OR ({_uuid_check("category_id")}))
@@ -170,7 +188,7 @@ _SCHEMA_STATEMENTS = (
     """,
     """
     INSERT INTO schema_metadata(singleton, schema_version)
-    VALUES (1, 1)
+    VALUES (1, 2)
     """,
     """
     INSERT INTO display_id_counters(entity_type, next_value)
@@ -476,12 +494,95 @@ def _validate_schema(connection: sqlite3.Connection) -> None:
         raise StorageError("SQLite database contains foreign-key violations.")
 
 
+def _migrate_v1_to_v2(connection: sqlite3.Connection) -> None:
+    """Replace REAL amounts with canonical decimal TEXT atomically."""
+    if _user_tables(connection) != _REQUIRED_TABLES:
+        raise StorageError("SQLite schema version 1 is incomplete.")
+    actual_columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(transactions)")
+    }
+    if actual_columns != _REQUIRED_COLUMNS["transactions"]:
+        raise StorageError("SQLite schema version 1 transactions are malformed.")
+    amount_column = next(
+        row
+        for row in connection.execute("PRAGMA table_info(transactions)")
+        if row["name"] == "amount"
+    )
+    if str(amount_column["type"]).upper() != "REAL":
+        raise StorageError("SQLite schema version 1 amount must use REAL.")
+    if connection.execute("PRAGMA foreign_key_check").fetchall():
+        raise StorageError("SQLite database contains foreign-key violations.")
+
+    rows = connection.execute(
+        """SELECT id, display_id, type, amount, category, category_id,
+                  account, account_id, description, transaction_date,
+                  created_at, updated_at
+           FROM transactions"""
+    ).fetchall()
+    try:
+        migrated_rows = [
+            (
+                row["id"],
+                row["display_id"],
+                row["type"],
+                serialize_amount(validate_amount(row["amount"])),
+                row["category"],
+                row["category_id"],
+                row["account"],
+                row["account_id"],
+                row["description"],
+                row["transaction_date"],
+                row["created_at"],
+                row["updated_at"],
+            )
+            for row in rows
+        ]
+    except ValueError as error:
+        raise StorageError(
+            "SQLite schema version 1 contains an invalid amount."
+        ) from error
+
+    for index_name in _REQUIRED_INDEXES:
+        if _REQUIRED_INDEXES[index_name].table == "transactions":
+            connection.execute(f"DROP INDEX {index_name}")
+    connection.execute("ALTER TABLE transactions RENAME TO transactions_v1")
+    connection.execute(_SCHEMA_STATEMENTS[4])
+    connection.executemany(
+        """INSERT INTO transactions(
+               id, display_id, type, amount, category, category_id,
+               account, account_id, description, transaction_date,
+               created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        migrated_rows,
+    )
+    connection.execute("DROP TABLE transactions_v1")
+    for statement in _SCHEMA_STATEMENTS:
+        object_name = _created_object_name(statement)
+        if (
+            object_name in _REQUIRED_INDEXES
+            and _REQUIRED_INDEXES[object_name].table == "transactions"
+        ):
+            connection.execute(statement)
+    connection.execute(
+        "UPDATE schema_metadata SET schema_version = 2 WHERE singleton = 1"
+    )
+
+
 def initialize_schema(database: SQLiteDatabase) -> None:
-    """Atomically initialize an empty database or validate schema version 1."""
+    """Atomically initialize or migrate and validate the current schema."""
     with database.transaction() as connection:
-        if not _user_tables(connection):
+        tables = _user_tables(connection)
+        if not tables:
             for statement in _SCHEMA_STATEMENTS:
                 connection.execute(statement)
+        elif tables != _REQUIRED_TABLES:
+            raise StorageError(
+                f"SQLite database does not match schema version {SCHEMA_VERSION}."
+            )
+        else:
+            version = _read_schema_version(connection)
+            if version == 1:
+                _migrate_v1_to_v2(connection)
         _validate_schema(connection)
 
 

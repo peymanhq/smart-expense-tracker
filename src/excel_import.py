@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import date, datetime
-import math
+from decimal import Decimal
 from pathlib import Path
 from zipfile import BadZipFile
 
@@ -65,7 +65,7 @@ class ExcelImportRow:
     row_number: int
     transaction_date: date
     transaction_type: str
-    amount: float
+    amount: Decimal
     description: str
     account_name: str
     category_name: str
@@ -213,6 +213,13 @@ def _parse_date(
         )
     if isinstance(value, datetime):
         return value.date(), None
+    if not isinstance(value, (date, str)):
+        return None, _issue(
+            row_number,
+            "Date",
+            "Date must be a valid Excel date or supported YYYY-MM-DD text.",
+            value,
+        )
     try:
         return validate_transaction_date(value), None
     except ValueError:
@@ -256,7 +263,7 @@ def _parse_type(
 def _parse_amount(
     value: object,
     row_number: int,
-) -> tuple[float | None, ExcelImportIssue | None]:
+) -> tuple[Decimal | None, ExcelImportIssue | None]:
     if _is_blank(value):
         return None, _issue(
             row_number,
@@ -271,20 +278,25 @@ def _parse_amount(
             "Amount must be a finite number greater than zero.",
             value,
         )
-    try:
-        amount = validate_amount(value)
-    except (TypeError, ValueError):
+    if not isinstance(value, (str, int, float, Decimal)):
         return None, _issue(
             row_number,
             "Amount",
             "Amount must be a valid number greater than zero.",
             value,
         )
-    if not math.isfinite(amount):
+    try:
+        amount = validate_amount(value)
+    except (TypeError, ValueError) as error:
+        message = (
+            "Amount must be a finite number greater than zero."
+            if "finite" in str(error)
+            else "Amount must be a valid number greater than zero."
+        )
         return None, _issue(
             row_number,
             "Amount",
-            "Amount must be a finite number greater than zero.",
+            message,
             value,
         )
     return amount, None

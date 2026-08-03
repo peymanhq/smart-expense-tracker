@@ -1019,3 +1019,45 @@ application.
   mirror.
 - Users needing legacy behavior must select the JSON compatibility backend
   explicitly.
+
+---
+
+# ADR-030
+
+## Title
+
+Use exact decimal amounts and enforce type and coverage quality gates.
+
+## Status
+
+Accepted in v1.5.1.
+
+## Context
+
+Binary floating-point amounts can introduce representation artifacts in
+financial totals. The project also had no automated static-type or minimum
+coverage contract, allowing those forms of technical debt to grow silently.
+
+## Decision
+
+Represent transaction amounts with Python `Decimal` throughout validation,
+domain entities, services, reporting, Excel import, and repositories. Accept
+legacy numeric input without applying an implicit currency scale or rounding
+policy. Serialize current amounts as canonical, non-exponent decimal text.
+
+Introduce JSON transaction schema version 4 for decimal-text amounts while
+continuing to read schema versions 1 through 3. Introduce SQLite schema version
+2 and atomically rebuild the Transaction table from version-1 `REAL` amounts
+to decimal `TEXT` during application initialization.
+
+Run `mypy` over all source modules and require at least 90% source coverage in
+the Python 3.10 and 3.13 CI matrix.
+
+## Consequences
+
+- New calculations and persisted values avoid binary floating-point drift.
+- Legacy floating-point values retain their shortest Python decimal rendering;
+  no undocumented rounding or currency precision is imposed.
+- Existing JSON reads remain non-mutating and upgrade on the next successful
+  write; existing SQLite databases upgrade inside one transaction.
+- A type error, test failure, or coverage regression below 90% blocks CI.

@@ -1,3 +1,33 @@
+# Smart Expense Tracker v1.5.1
+
+Released 2026-08-03.
+
+v1.5.1 resolves the planned exact-money and quality-gate technical debt without
+changing the user workflow or default SQLite backend.
+
+## Exact Money and Storage Upgrades
+
+- Use Python `Decimal` for validation, transactions, reporting, import, and
+  repository boundaries.
+- Store current JSON amounts as canonical decimal text in schema version 4.
+- Migrate existing SQLite schema-version-1 `REAL` amounts atomically to
+  schema-version-2 decimal `TEXT` during initialization.
+- Continue reading JSON schema versions 1 through 3 and preserve automatic
+  JSON-to-SQLite migration.
+
+## Quality and Licensing
+
+- Type-check all 36 source modules in CI with `mypy`.
+- Enforce at least 90% source coverage in CI; the release suite reports 91%.
+- Publish the package under the MIT License.
+
+## Release Verification
+
+The v1.5.1 release suite contains 617 passing tests, including exact-decimal
+round trips, legacy JSON compatibility, and SQLite v1-to-v2 migration.
+
+---
+
 # Smart Expense Tracker v1.5.0
 
 Released 2026-08-03.
