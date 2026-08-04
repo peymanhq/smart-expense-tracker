@@ -12,6 +12,7 @@ license = "MIT"
 license-files = ["LICENSE"]
 dependencies = [
     "openpyxl>=3.1,<4.0",
+    "python-telegram-bot>=22.8,<23.0",
 ]
 
 [project.optional-dependencies]
@@ -42,6 +43,7 @@ expense-tracker-storage = "sqlite_backup:main"
 [tool.setuptools]
 package-dir = {"" = "src"}
 py-modules = [
+    "telegram_config",
     "account",
     "application",
     "account_repository",

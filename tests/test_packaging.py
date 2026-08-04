@@ -2,9 +2,9 @@
 
 import importlib
 import os
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 try:
     import tomllib
@@ -37,7 +37,10 @@ def test_project_metadata_declares_release_and_dependencies() -> None:
     assert project["requires-python"] == ">=3.10"
     assert project["license"] == "MIT"
     assert project["license-files"] == ["LICENSE"]
-    assert project["dependencies"] == ["openpyxl>=3.1,<4.0"]
+    assert project["dependencies"] == [
+        "openpyxl>=3.1,<4.0",
+        "python-telegram-bot>=22.8,<23.0",
+    ]
     assert project["optional-dependencies"]["dev"] == [
         "build>=1.2,<2.0",
         "mypy>=1.11,<2.0",
