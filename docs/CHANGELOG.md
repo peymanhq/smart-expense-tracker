@@ -8,6 +8,22 @@ The format is based on **Keep a Changelog** and follows **Semantic Versioning**.
 
 ## [Unreleased]
 
+### Added
+
+- Single-user Telegram Bot MVP with foreground long polling
+- Authorized `/start`, `/help`, `/add`, `/cancel`, `/balance`, and `/summary`
+- Confirmed multi-step entry using active Accounts and type-compatible active
+  Categories
+- Environment-only bot token, user ID, workspace, and IANA-timezone configuration
+- Backend-neutral Telegram application façade and isolated Telegram handlers
+- Telegram configuration, application, handler, runtime, and packaging coverage
+
+### Changed
+
+- Added the installed `expense-tracker-telegram` console command
+- Reused the existing SQLite application composition, transaction validation,
+  managed-reference rules, pure reporting, and repository contracts for Telegram
+
 ---
 
 ## [1.5.1] - 2026-08-03

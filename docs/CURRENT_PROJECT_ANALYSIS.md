@@ -38,10 +38,11 @@ search, and daily/range reports. Transaction mutations are locked, creation
 allocates display IDs atomically, and JSON schema versions 1 through 3 remain
 compatible with legacy transaction files.
 
-The current suite contains 617 passing tests with a 90% coverage gate and
-source-wide static type checking. Persistence, migration,
-packaging, and Excel tests use temporary workspaces and do not modify runtime
-JSON data.
+The v1.5.1 release suite contains 617 passing tests. The current v1.6.0
+development suite contains 648 passing tests with a 90% coverage gate and
+source-wide static type checking. Persistence, migration, packaging, Excel, and
+Telegram tests use temporary workspaces or network-free test doubles and do not
+modify runtime data.
 
 ## Current Architecture
 
@@ -218,9 +219,23 @@ the stable Income or Expense range from each row's Type. Shared workbook
 constants and atomic output behavior live in `excel_workbook.py`.
 
 Template generation and `ExcelImportService` remain callable without terminal
-input or output. `main.py` is the current CLI adapter, so a future Telegram
-adapter can reuse these boundaries without owning workbook or persistence
-logic.
+input or output. `main.py` remains the CLI adapter; the Telegram adapter reuses
+these boundaries without owning workbook or persistence logic.
+
+### Telegram Adapter
+
+The v1.6.0 work adds a separate single-user Telegram adapter. `telegram_bot.py`
+composes the configured SQLite workspace and owns foreground long polling;
+`telegram_handlers.py` owns authorization and the guided conversation; and
+`telegram_application.py` reuses existing application services and pure report
+calculations. No Telegram code accesses SQL or JSON directly, and `main.py`
+remains unchanged.
+
+The guided add flow accepts today's income or expense only, lists active
+Accounts and type-compatible active Categories, requires Amount and Description,
+and persists after confirmation. Balance is all-time and summary is limited to
+today in the configured IANA timezone. Update, delete, Excel delivery, and
+multiple users remain deferred.
 
 Charts and PDF output remain deferred.
 
@@ -228,10 +243,10 @@ Charts and PDF output remain deferred.
 
 Keep future work scoped and incremental:
 
-1. Define backup rotation/retention and release rollback policy.
-2. Add rollback and corruption tests for each future SQLite schema upgrade.
-3. Add linting as a separately scoped tooling change.
+1. Complete live manual Telegram verification with a disposable bot token.
+2. Define backup rotation/retention and release rollback policy.
+3. Add rollback and corruption tests for each future SQLite schema upgrade.
+4. Add linting as a separately scoped tooling change.
 
-Multiple currencies, transfers, dashboards, a GUI, and external interfaces
-remain roadmap items and are not implemented by the date-based transaction
-feature.
+Multiple currencies, transfers, dashboards, a GUI, and broader external
+interfaces remain roadmap items.

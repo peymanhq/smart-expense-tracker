@@ -39,11 +39,15 @@ show_missing = true
 [project.scripts]
 expense-tracker = "main:main"
 expense-tracker-storage = "sqlite_backup:main"
+expense-tracker-telegram = "telegram_bot:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
 py-modules = [
+    "telegram_application",
+    "telegram_bot",
     "telegram_config",
+    "telegram_handlers",
     "account",
     "application",
     "account_repository",

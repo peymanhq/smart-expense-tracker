@@ -87,6 +87,10 @@ main.py
 | `search.py` | Pure date/text filtering, ordering, and display-ID lookup |
 | `formatter.py` | Terminal formatting |
 | `id_generator.py` | UUID creation and display-ID formatting, parsing, and legacy-state calculation |
+| `telegram_config.py` | Validated single-user token, workspace, and IANA-timezone runtime configuration |
+| `telegram_application.py` | Telegram-facing use cases composed only from application services and pure reports |
+| `telegram_handlers.py` | Authorized commands, callbacks, response formatting, and in-memory conversation state |
+| `telegram_bot.py` | SQLite composition, handler registration, and foreground long polling |
 
 `main.py` owns terminal interaction and date-workspace session state.
 `application.py` owns dependency construction for both supported backends.
@@ -181,6 +185,37 @@ Template generation and import analysis/persistence are callable application
 services without terminal input or output. `main.py` is the current CLI
 adapter; a future messaging adapter can invoke the same boundaries without
 moving workbook parsing or JSON persistence into the adapter.
+
+### Telegram MVP Data Flow
+
+```text
+Telegram update
+  -> `telegram_handlers.py` authorization and conversation state
+  -> `telegram_application.py`
+  -> existing Account / Category / Transaction services
+  -> repository protocols
+  -> SQLite repositories for the configured workspace
+```
+
+`telegram_bot.py` is a separate installed entry point and never imports or
+extends CLI orchestration from `main.py`. It builds the existing application
+with an explicit workspace and SQLite backend. `telegram_application.py`
+provides active managed selections, managed transaction creation, all-time
+balance, and configured-date summary without importing Telegram types or a
+concrete repository.
+
+The adapter authorizes the configured numeric user ID before any application
+query or mutation. `/add` keeps only a temporary draft in Telegram user data,
+uses managed UUIDs in callback data, captures today from the configured IANA
+timezone before preview, and persists only after explicit confirmation.
+`TransactionService` rechecks active managed references and category/type
+compatibility at the mutation boundary, so stale buttons cannot bypass business
+rules. `/cancel` clears the draft from every conversation state.
+
+The bot runtime uses SQLite, but Telegram use-case tests exercise both JSON and
+SQLite composition to preserve repository neutrality. Token, user, workspace,
+and timezone configuration is loaded only when the bot entry point runs;
+importing Telegram modules does not start polling or create a database.
 
 `AccountService` and `CategoryService` own managed-record validation and
 business rules. They receive repository protocols and do not accept file

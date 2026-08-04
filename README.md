@@ -1,9 +1,10 @@
 # Smart Expense Tracker
 
-Smart Expense Tracker is a local command-line application for recording
-income and expenses. Starting with v1.5.0, SQLite is the default storage
-backend, with automatic non-destructive migration from existing JSON
-workspaces and an explicit JSON compatibility mode.
+Smart Expense Tracker is a local personal-finance application for recording
+income and expenses through a command-line interface or a single-user Telegram
+bot. Starting with v1.5.0, SQLite is the default storage backend, with automatic
+non-destructive migration from existing JSON workspaces and an explicit JSON
+compatibility mode.
 
 ## Version status
 
@@ -31,6 +32,8 @@ through an explicit compatibility override.
 - Keep an internal UUID separate from the user-facing display ID
 - Write JSON atomically to reduce the risk of partial-file corruption
 - Migrate validated JSON data to SQLite without modifying the JSON source
+- Add today's income and expenses through a guided Telegram conversation
+- Receive all-time balance and today's financial summary in Telegram
 
 ## Project structure
 
@@ -69,6 +72,10 @@ smart-expense-tracker/
 │   ├── excel_import.py      # Defensive workbook parsing and row issues
 │   ├── excel_import_service.py # Resolution, preview, duplicates, persistence
 │   ├── excel_template.py    # Guided import-template generation
+│   ├── telegram_config.py   # Validated secret, user, workspace, timezone config
+│   ├── telegram_application.py # Backend-neutral Telegram use cases
+│   ├── telegram_handlers.py # Authorized commands and add conversation
+│   ├── telegram_bot.py      # Foreground long-polling runtime
 │   └── search.py            # Search and exact display-ID lookup
 ├── tests/                   # pytest automated tests
 ├── requirements.txt
@@ -129,6 +136,42 @@ running once from `Documents` and later from `Desktop` uses different `data/`
 directories, so the earlier records will appear missing until the command is
 run again from `Documents`. Use one consistent workspace directory for normal
 operation.
+
+### Running the Telegram bot
+
+The Telegram MVP runs as one foreground `long polling` process for one allowed
+Telegram user. Configure its environment without writing the real bot token to
+the repository:
+
+```bash
+export TELEGRAM_BOT_TOKEN="<bot-token>"
+export TELEGRAM_ALLOWED_USER_ID="<numeric-telegram-user-id>"
+export SMART_EXPENSE_TRACKER_WORKSPACE="$(pwd)"
+export TELEGRAM_TIMEZONE="Asia/Baghdad"
+expense-tracker-telegram
+```
+
+`TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_ID`, and
+`SMART_EXPENSE_TRACKER_WORKSPACE` are required. The workspace must already be a
+directory. `TELEGRAM_TIMEZONE` accepts an IANA timezone and defaults to
+`Asia/Baghdad`. The bot opens the same
+`data/smart_expense_tracker.sqlite3` used by the CLI when both commands receive
+the same workspace. Invalid configuration stops startup before polling.
+
+The bot supports:
+
+- `/start` and `/help` for usage guidance
+- `/add` for `Type -> Account -> Category -> Amount -> Description -> Confirm`
+- `/cancel` at every add step without persisting a partial transaction
+- `/balance` for the all-time income, expense, net balance, and count
+- `/summary` for the same values limited to today in the configured timezone
+
+Only active Accounts are offered. Categories must be active and match the
+selected income/expense type. Description is required, and the transaction is
+persisted only after confirmation. Press `Ctrl+C` to stop the foreground bot.
+Draft conversations are intentionally in memory and do not survive a restart.
+Update, delete, Excel export, webhook deployment, and multiple users are outside
+this MVP.
 
 ## Storage backends
 
