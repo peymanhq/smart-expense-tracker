@@ -3,7 +3,6 @@ from pathlib import Path
 import pytest
 
 from telegram_config import (
-    TelegramConfig,
     TelegramConfigurationError,
     load_telegram_config,
 )

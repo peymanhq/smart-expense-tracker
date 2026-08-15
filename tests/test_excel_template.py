@@ -1,13 +1,13 @@
 """Workbook-level tests for the Excel import template."""
 
-from pathlib import Path
 
-from openpyxl import load_workbook
 import pytest
+from openpyxl import load_workbook
 
+import excel_template
+import excel_workbook
 from account import Account
 from category import Category
-import excel_template
 from excel_template import (
     INSTRUCTIONS,
     TEMPLATE_ENTRY_LAST_ROW,
@@ -22,7 +22,6 @@ from excel_workbook import (
     ExcelSaveError,
     InvalidExcelDestinationError,
 )
-import excel_workbook
 
 ACCOUNT_ID = "123e4567-e89b-12d3-a456-426614174000"
 INACTIVE_ACCOUNT_ID = "123e4567-e89b-12d3-a456-426614174010"

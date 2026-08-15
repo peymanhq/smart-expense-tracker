@@ -1,16 +1,16 @@
 """Backend-neutral Transaction repository contract tests."""
 
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
-import sqlite3
 from typing import Callable
 from uuid import NAMESPACE_URL, uuid5
 
-from openpyxl import Workbook
 import pytest
+from openpyxl import Workbook
 
 from excel_import_service import (
     ExcelImportPersistenceConflictError,
@@ -25,10 +25,11 @@ from sqlite_schema import initialize_schema
 from sqlite_transaction_repository import SQLiteTransactionRepository
 from transaction import Transaction
 from transaction_repository import (
-    JsonTransactionRepository,
     RepositoryTransactionConflictError,
     RepositoryTransactionNotFoundError,
+    RepositoryTransactionRecordChangedError,
     TransactionDateSummary,
+    TransactionQuery,
     TransactionRepository,
 )
 from transaction_service import TransactionService
@@ -69,9 +70,8 @@ def candidate(
     )
 
 
-@pytest.fixture(params=["json", "sqlite"])
+@pytest.fixture
 def transaction_backend(
-    request: pytest.FixtureRequest,
     tmp_path: Path,
 ) -> tuple[
     TransactionRepository,
@@ -81,24 +81,17 @@ def transaction_backend(
 ]:
     account_id = record_id("managed-account")
     category_id = record_id("managed-category")
-    if request.param == "json":
-        data_file = tmp_path / "json" / "transactions.json"
+    database = SQLiteDatabase(tmp_path / "sqlite" / "database.sqlite3")
+    initialize_schema(database)
+    SQLiteAccountRepository(database).create(account_id, "Cash")
+    SQLiteCategoryRepository(database).create(
+        category_id,
+        "Food",
+        "expense",
+    )
 
-        def build() -> TransactionRepository:
-            return JsonTransactionRepository(data_file)
-
-    else:
-        database = SQLiteDatabase(tmp_path / "sqlite" / "database.sqlite3")
-        initialize_schema(database)
-        SQLiteAccountRepository(database).create(account_id, "Cash")
-        SQLiteCategoryRepository(database).create(
-            category_id,
-            "Food",
-            "expense",
-        )
-
-        def build() -> TransactionRepository:
-            return SQLiteTransactionRepository(database)
+    def build() -> TransactionRepository:
+        return SQLiteTransactionRepository(database)
 
     return build(), build, account_id, category_id
 
@@ -132,6 +125,29 @@ def test_empty_create_lookup_order_and_restart(
     detached = repository.list_all()
     detached.clear()
     assert repository.list_all() == [first, second]
+
+
+def test_query_port_filters_paginates_and_summarizes_exact_decimals(
+    transaction_backend,
+) -> None:
+    repository, _, account_id, category_id = transaction_backend
+    repository.create_many(
+        [
+            candidate("query-1", amount=Decimal("0.1"), description="Café lunch", account_id=account_id, category_id=category_id),
+            candidate("query-2", amount=Decimal("0.2"), description="CAFÉ dinner", account_id=account_id, category_id=category_id),
+            candidate("query-3", transaction_date=PAST, amount=Decimal("5"), account_id=account_id, category_id=category_id),
+        ]
+    )
+
+    page = repository.query(TransactionQuery(text_query="café", limit=1, offset=1))
+    summary = repository.summarize(TransactionQuery(transaction_date=TODAY))
+
+    assert page.total_count == 2
+    assert len(page.items) == 1
+    assert page.items[0].description == "CAFÉ dinner"
+    assert summary.total_expense == Decimal("0.3")
+    assert summary.balance == Decimal("-0.3")
+    assert summary.transaction_count == 2
 
 
 def test_bulk_dates_references_and_timestamps(
@@ -208,18 +224,21 @@ def test_replace_delete_and_monotonic_allocation(
         updated_at=LATER,
     )
 
-    updated = repository.replace(replacement)
+    updated = repository.replace(original, replacement)
 
     assert updated.id == original.id
     assert updated.display_id == original.display_id
     assert updated.created_at == original.created_at
     assert updated.updated_at == LATER
     assert restart().get_by_id(original.id) == updated
+    with pytest.raises(RepositoryTransactionRecordChangedError):
+        repository.replace(original, replace(updated, amount=30))
     assert repository.delete_by_id(original.id) is True
     assert repository.delete_by_id(original.id) is False
     assert restart().create(candidate("after-delete")).display_id == "T-0002"
     with pytest.raises(RepositoryTransactionNotFoundError):
-        repository.replace(replace(updated, id=record_id("absent")))
+        missing = replace(updated, id=record_id("absent"))
+        repository.replace(missing, missing)
 
 
 def test_bulk_duplicate_rules_are_atomic(
@@ -412,6 +431,7 @@ def test_sqlite_failed_reference_update_preserves_existing_row(
 
     with pytest.raises(StorageError):
         repository.replace(
+            original,
             replace(
                 original,
                 amount=99.0,

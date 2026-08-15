@@ -5,8 +5,9 @@ import pytest
 
 import main
 from date_policy import validate_date_query
+from search import filter_transactions
 from transaction import Transaction
-
+from transaction_repository import TransactionPage
 
 TODAY = date(2026, 7, 25)
 
@@ -46,6 +47,11 @@ class SearchService:
     def list_transactions(self):
         self.list_calls += 1
         return list(self.transactions)
+
+    def query_transactions(self, **criteria):
+        self.list_calls += 1
+        items = filter_transactions(self.transactions, **criteria)
+        return TransactionPage(items, len(items), None, 0)
 
 
 def set_inputs(monkeypatch, values):

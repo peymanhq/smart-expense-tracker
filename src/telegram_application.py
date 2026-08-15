@@ -10,8 +10,6 @@ from application import ApplicationServices
 from category import Category
 from report import (
     FinancialSummary,
-    calculate_financial_summary,
-    generate_daily_summary,
 )
 from transaction import Transaction
 from validators import (
@@ -97,17 +95,17 @@ class TelegramApplicationService:
         )
 
     def all_time_summary(self) -> FinancialSummary:
-        transactions = self.application.transaction_service.list_transactions()
-        return calculate_financial_summary(transactions)
+        return self.application.transaction_service.financial_summary()
 
     def today_summary(self) -> FinancialSummary:
         return self.summary_for_date(self.today())
 
     def summary_for_date(self, transaction_date: date) -> FinancialSummary:
-        transactions = self.application.transaction_service.list_transactions()
         accepted_date = (
             self.application.transaction_service.validate_transaction_date(
                 transaction_date
             )
         )
-        return generate_daily_summary(transactions, accepted_date)
+        return self.application.transaction_service.financial_summary(
+            transaction_date=accepted_date,
+        )

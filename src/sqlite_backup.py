@@ -2,18 +2,28 @@
 
 import argparse
 import os
-from pathlib import Path
 import sqlite3
 import sys
 import tempfile
+from collections.abc import Callable
+from datetime import datetime, timezone
+from pathlib import Path
 
 from persistence_errors import StorageError
 from sqlite_database import SQLiteDatabase
-from sqlite_schema import validate_schema
+from sqlite_schema import validate_database_integrity, validate_schema
 
 
 class SQLiteBackupError(StorageError):
     """Raised when a SQLite backup or restore cannot complete safely."""
+
+
+_ROTATING_BACKUP_PREFIX = "smart-expense-tracker-"
+_ROTATING_BACKUP_SUFFIX = ".sqlite3"
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 def _existing_database(path: Path, data_name: str) -> SQLiteDatabase:
@@ -50,6 +60,7 @@ def _copy_database_atomically(
         )
     try:
         destination.parent.mkdir(parents=True, exist_ok=True)
+        os.chmod(destination.parent, 0o700)
         descriptor, temporary_name = tempfile.mkstemp(
             prefix=f".{destination.name}.",
             suffix=".tmp",
@@ -112,6 +123,49 @@ def create_sqlite_backup(
     )
 
 
+def create_rotating_sqlite_backup(
+    database: SQLiteDatabase,
+    destination_directory: Path | str,
+    *,
+    keep: int = 7,
+    utc_now_provider: Callable[[], datetime] = _utc_now,
+) -> Path:
+    """Create one timestamped backup and retain only the newest ``keep`` files."""
+    if not isinstance(keep, int) or isinstance(keep, bool) or keep < 1:
+        raise ValueError("keep must be a positive integer.")
+    timestamp = utc_now_provider()
+    if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+        raise ValueError("Backup clock must return a timezone-aware datetime.")
+    timestamp = timestamp.astimezone(timezone.utc)
+    directory = Path(destination_directory)
+    filename = (
+        f"{_ROTATING_BACKUP_PREFIX}"
+        f"{timestamp.strftime('%Y%m%dT%H%M%S%fZ')}"
+        f"{_ROTATING_BACKUP_SUFFIX}"
+    )
+    created = create_sqlite_backup(database, directory / filename)
+
+    candidates = sorted(
+        (
+            path
+            for path in directory.glob(
+                f"{_ROTATING_BACKUP_PREFIX}*{_ROTATING_BACKUP_SUFFIX}"
+            )
+            if path.is_file()
+        ),
+        key=lambda path: path.name,
+        reverse=True,
+    )
+    try:
+        for expired in candidates[keep:]:
+            expired.unlink()
+    except OSError as error:
+        raise SQLiteBackupError(
+            f"Backup was created but retention cleanup failed in {directory}."
+        ) from error
+    return created
+
+
 def restore_sqlite_backup(
     backup_path: Path | str,
     database: SQLiteDatabase,
@@ -147,6 +201,20 @@ def _parser() -> argparse.ArgumentParser:
     backup_parser = subparsers.add_parser("backup")
     backup_parser.add_argument("destination", type=Path)
     backup_parser.add_argument("--overwrite", action="store_true")
+    rotate_parser = subparsers.add_parser("rotate")
+    rotate_parser.add_argument("directory", type=Path)
+    rotate_parser.add_argument(
+        "--keep",
+        type=int,
+        default=7,
+        help="Number of newest managed backups to retain (default: 7).",
+    )
+    check_parser = subparsers.add_parser("check")
+    check_parser.add_argument(
+        "--quick",
+        action="store_true",
+        help="Use SQLite quick_check instead of the full integrity_check.",
+    )
     restore_parser = subparsers.add_parser("restore")
     restore_parser.add_argument("backup", type=Path)
     restore_parser.add_argument(
@@ -162,13 +230,24 @@ def main(argv: list[str] | None = None) -> int:
     arguments = _parser().parse_args(argv)
     database = SQLiteDatabase.for_workspace(arguments.workspace)
     try:
-        if arguments.operation == "backup":
+        if arguments.operation == "check":
+            database = _existing_database(database.path, "SQLite database")
+            validate_database_integrity(database, full=not arguments.quick)
+            print(f"SQLite integrity check passed: {database.path}")
+        elif arguments.operation == "backup":
             output = create_sqlite_backup(
                 database,
                 arguments.destination,
                 overwrite=arguments.overwrite,
             )
             print(f"SQLite backup created: {output}")
+        elif arguments.operation == "rotate":
+            output = create_rotating_sqlite_backup(
+                database,
+                arguments.directory,
+                keep=arguments.keep,
+            )
+            print(f"SQLite rotating backup created: {output}")
         else:
             output = restore_sqlite_backup(
                 arguments.backup,

@@ -11,10 +11,13 @@ from id_generator import (
     parse_account_display_id,
     parse_category_display_id,
 )
-from json_storage import StorageError
-from transaction_repository import JsonTransactionRepository
+from persistence_errors import StorageError
+from sqlite_account_repository import SQLiteAccountRepository
+from sqlite_category_repository import SQLiteCategoryRepository
+from sqlite_database import SQLiteDatabase
+from sqlite_schema import initialize_schema
+from sqlite_transaction_repository import SQLiteTransactionRepository
 from transaction_service import TransactionService
-
 
 TODAY = date(2026, 7, 25)
 PAST_DATE = date(2026, 7, 20)
@@ -40,10 +43,16 @@ def category_display_lookup(value: str) -> Category | None:
 
 @pytest.fixture
 def service(tmp_path) -> TransactionService:
+    database = SQLiteDatabase(tmp_path / "data" / "tracker.sqlite3")
+    initialize_schema(database)
+    SQLiteAccountRepository(database).create(ACCOUNT.id, ACCOUNT.name)
+    SQLiteCategoryRepository(database).create(
+        EXPENSE_CATEGORY.id,
+        EXPENSE_CATEGORY.name,
+        EXPENSE_CATEGORY.transaction_type,
+    )
     return TransactionService(
-        JsonTransactionRepository(
-            tmp_path / "data" / "transactions.json"
-        ),
+        SQLiteTransactionRepository(database),
         today_provider=lambda: TODAY,
         utc_now_provider=lambda: NOW,
         account_lookup=lambda account_id: (

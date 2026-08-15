@@ -487,6 +487,10 @@ def _validate_schema(connection: sqlite3.Connection) -> None:
     _validate_object_definitions(connection)
     _validate_counters(connection)
 
+    integrity_rows = connection.execute("PRAGMA quick_check").fetchall()
+    if [row[0] for row in integrity_rows] != ["ok"]:
+        raise StorageError("SQLite database integrity check failed.")
+
     foreign_key_errors = connection.execute(
         "PRAGMA foreign_key_check"
     ).fetchall()
@@ -590,3 +594,18 @@ def validate_schema(database: SQLiteDatabase) -> None:
     """Validate an existing schema without modifying it."""
     with database.connection() as connection:
         _validate_schema(connection)
+
+
+def validate_database_integrity(
+    database: SQLiteDatabase,
+    *,
+    full: bool = True,
+) -> None:
+    """Run an explicit physical and referential integrity check."""
+    pragma = "integrity_check" if full else "quick_check"
+    with database.connection() as connection:
+        rows = connection.execute(f"PRAGMA {pragma}").fetchall()
+        if [row[0] for row in rows] != ["ok"]:
+            raise StorageError("SQLite database integrity check failed.")
+        if connection.execute("PRAGMA foreign_key_check").fetchall():
+            raise StorageError("SQLite database contains foreign-key violations.")

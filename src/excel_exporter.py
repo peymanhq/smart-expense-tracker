@@ -1,11 +1,11 @@
 """Excel reporting adapter for in-memory transaction collections."""
 
+import unicodedata
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
-import unicodedata
 
 from openpyxl import Workbook
 
@@ -14,13 +14,19 @@ from excel_workbook import (
     DATE_FORMAT,
     DATETIME_FORMAT,
     EXPORTED_TRANSACTION_HEADERS,
-    ExcelDestinationExistsError,
-    ExcelSaveError,
     ExcelWorkbookError,
-    InvalidExcelDestinationError,
-    normalize_excel_destination,
     save_workbook_atomic,
     style_table,
+)
+from excel_workbook import (
+    ExcelDestinationExistsError as ExcelDestinationExistsError,
+)
+from excel_workbook import ExcelSaveError as ExcelSaveError
+from excel_workbook import (
+    InvalidExcelDestinationError as InvalidExcelDestinationError,
+)
+from excel_workbook import (
+    normalize_excel_destination as normalize_excel_destination,
 )
 from id_generator import parse_display_id
 from report import calculate_financial_summary

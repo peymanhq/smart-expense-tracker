@@ -1,14 +1,10 @@
-"""Minimal transaction repository and JSON-backed implementation."""
+"""Transaction persistence contract and shared repository errors."""
 
-from collections import Counter
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import date
-from pathlib import Path
 from typing import Protocol
 
-from id_generator import generate_display_id, parse_display_id
-from search import find_transaction_by_display_id
-import storage
+from report import FinancialSummary
 from transaction import Transaction, transaction_comparison_key
 
 
@@ -20,8 +16,32 @@ class TransactionDateSummary:
     transaction_count: int
 
 
+@dataclass(frozen=True)
+class TransactionQuery:
+    """Backend-neutral transaction selection and pagination criteria."""
+
+    transaction_type: str | None = None
+    category: str | None = None
+    account: str | None = None
+    description: str | None = None
+    text_query: str | None = None
+    transaction_date: date | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+    limit: int | None = None
+    offset: int = 0
+
+
+@dataclass(frozen=True)
+class TransactionPage:
+    items: list[Transaction]
+    total_count: int
+    limit: int | None
+    offset: int
+
+
 class TransactionRepository(Protocol):
-    """Persistence operations required by the transaction service."""
+    """Persistence operations required by transaction workflows."""
 
     def create(self, transaction: Transaction) -> Transaction:
         """Atomically allocate a display ID and persist a transaction."""
@@ -43,7 +63,7 @@ class TransactionRepository(Protocol):
         ...
 
     def list_all(self) -> list[Transaction]:
-        """List every transaction as a detached in-memory collection."""
+        """List every transaction as a detached collection."""
         ...
 
     def list_by_date(self, transaction_date: date) -> list[Transaction]:
@@ -54,8 +74,20 @@ class TransactionRepository(Protocol):
         """List distinct populated dates and their transaction counts."""
         ...
 
-    def replace(self, transaction: Transaction) -> Transaction:
-        """Replace one persisted transaction by internal ID."""
+    def query(self, criteria: TransactionQuery) -> TransactionPage:
+        """Select and paginate transactions without loading unrelated rows."""
+        ...
+
+    def summarize(self, criteria: TransactionQuery) -> FinancialSummary:
+        """Aggregate selected amounts without materializing domain records."""
+        ...
+
+    def replace(
+        self,
+        expected: Transaction,
+        replacement: Transaction,
+    ) -> Transaction:
+        """Atomically replace an unchanged persisted transaction."""
         ...
 
     def delete_by_id(self, transaction_id: str) -> bool:
@@ -64,7 +96,11 @@ class TransactionRepository(Protocol):
 
 
 class RepositoryTransactionNotFoundError(LookupError):
-    """Raised when a locked persistence mutation cannot find its target."""
+    """Raised when a persistence mutation cannot find its target."""
+
+
+class RepositoryTransactionRecordChangedError(ValueError):
+    """Raised when a transaction changed after the caller read it."""
 
 
 class RepositoryTransactionConflictError(ValueError):
@@ -93,19 +129,11 @@ class RepositoryTransactionConflictError(ValueError):
         super().__init__(message)
 
 
-def _display_order(transaction: Transaction) -> tuple[int, str]:
-    number = parse_display_id(transaction.display_id)
-    return (
-        number if number is not None else 2**63 - 1,
-        transaction.display_id,
-    )
-
-
 def _validate_bulk_conflicts(
     transactions: list[Transaction],
     existing_transactions: list[Transaction],
 ) -> None:
-    """Apply the backend-neutral managed-reference duplicate contract."""
+    """Apply the managed-reference duplicate contract."""
     existing_by_key = {
         key: transaction
         for transaction in existing_transactions
@@ -131,149 +159,3 @@ def _validate_bulk_conflicts(
                 earlier_candidate_index=batch_keys[key],
             )
         batch_keys[key] = index
-
-
-class JsonTransactionRepository:
-    """JSON implementation backed by the existing transaction document."""
-
-    def __init__(self, data_file: Path | None = None) -> None:
-        self._data_file = data_file
-
-    def _read(self) -> tuple[dict, list[Transaction]]:
-        document = storage._read_document(self._data_file)
-        return document, storage._deserialize_transactions(document)
-
-    def create(self, transaction: Transaction) -> Transaction:
-        """Allocate and persist under one complete mutation lock."""
-        with storage.transaction_file_lock(self._data_file):
-            document, transactions = self._read()
-            next_number = document["metadata"]["next_display_id"]
-            display_id = generate_display_id(next_number)
-            created_transaction = replace(
-                transaction,
-                display_id=display_id,
-            )
-            transactions.append(created_transaction)
-            document["transactions"] = [
-                storage._serialize_transaction(item) for item in transactions
-            ]
-            document["metadata"]["next_display_id"] = next_number + 1
-            storage._write_document(document, self._data_file)
-            return created_transaction
-
-    def create_many(
-        self,
-        transactions: list[Transaction],
-    ) -> list[Transaction]:
-        """Allocate ordered display IDs and persist through one mutation."""
-        if not transactions:
-            return []
-        with storage.transaction_file_lock(self._data_file):
-            document, existing_transactions = self._read()
-            _validate_bulk_conflicts(transactions, existing_transactions)
-
-            next_number = document["metadata"]["next_display_id"]
-            created_transactions = [
-                replace(
-                    transaction,
-                    display_id=generate_display_id(next_number + index),
-                )
-                for index, transaction in enumerate(transactions)
-            ]
-            document["transactions"] = [
-                storage._serialize_transaction(item)
-                for item in (*existing_transactions, *created_transactions)
-            ]
-            document["metadata"]["next_display_id"] = (
-                next_number + len(created_transactions)
-            )
-            storage._write_document(document, self._data_file)
-            return created_transactions
-
-    def get_by_display_id(self, display_id: str) -> Transaction | None:
-        _, transactions = self._read()
-        return find_transaction_by_display_id(transactions, display_id)
-
-    def get_by_id(self, transaction_id: str) -> Transaction | None:
-        if not isinstance(transaction_id, str):
-            return None
-        _, transactions = self._read()
-        return next(
-            (
-                transaction
-                for transaction in transactions
-                if transaction.id == transaction_id
-            ),
-            None,
-        )
-
-    def list_all(self) -> list[Transaction]:
-        _, transactions = self._read()
-        return list(transactions)
-
-    def list_by_date(self, transaction_date: date) -> list[Transaction]:
-        """Return one date ordered by ascending numeric display ID."""
-        _, transactions = self._read()
-        return sorted(
-            (
-                transaction
-                for transaction in transactions
-                if transaction.transaction_date == transaction_date
-            ),
-            key=_display_order,
-        )
-
-    def list_date_summaries(self) -> list[TransactionDateSummary]:
-        _, transactions = self._read()
-        counts = Counter(
-            transaction.transaction_date for transaction in transactions
-        )
-        return [
-            TransactionDateSummary(
-                transaction_date=transaction_date,
-                transaction_count=counts[transaction_date],
-            )
-            for transaction_date in sorted(counts, reverse=True)
-        ]
-
-    def replace(self, transaction: Transaction) -> Transaction:
-        with storage.transaction_file_lock(self._data_file):
-            document, transactions = self._read()
-            for index, existing in enumerate(transactions):
-                if existing.id != transaction.id:
-                    continue
-
-                preserved_transaction = replace(
-                    transaction,
-                    id=existing.id,
-                    display_id=existing.display_id,
-                    created_at=existing.created_at,
-                )
-                transactions[index] = preserved_transaction
-                document["transactions"] = [
-                    storage._serialize_transaction(item)
-                    for item in transactions
-                ]
-                storage._write_document(document, self._data_file)
-                return preserved_transaction
-
-        raise RepositoryTransactionNotFoundError(
-            f"Transaction id {transaction.id} no longer exists."
-        )
-
-    def delete_by_id(self, transaction_id: str) -> bool:
-        with storage.transaction_file_lock(self._data_file):
-            document, transactions = self._read()
-            remaining = [
-                transaction
-                for transaction in transactions
-                if transaction.id != transaction_id
-            ]
-            if len(remaining) == len(transactions):
-                return False
-
-            document["transactions"] = [
-                storage._serialize_transaction(item) for item in remaining
-            ]
-            storage._write_document(document, self._data_file)
-            return True

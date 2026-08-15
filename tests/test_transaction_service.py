@@ -1,24 +1,25 @@
-import json
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
 import pytest
 
-import storage
-from json_storage import StorageError
+from persistence_errors import StorageError
+from sqlite_account_repository import SQLiteAccountRepository
+from sqlite_category_repository import SQLiteCategoryRepository
+from sqlite_database import SQLiteDatabase
+from sqlite_schema import initialize_schema
+from sqlite_transaction_repository import SQLiteTransactionRepository
 from transaction import Transaction
-from transaction_repository import JsonTransactionRepository
 from transaction_service import (
     FutureTransactionDateError,
     InvalidUtcClockError,
     TransactionActiveDateMismatchError,
     TransactionNotFoundError,
+    TransactionRecordChangedError,
     TransactionService,
 )
-
 
 TODAY = date(2026, 7, 25)
 PAST_DATE = date(2026, 7, 21)
@@ -29,8 +30,20 @@ CATEGORY_ID = "123e4567-e89b-12d3-a456-426614174001"
 
 
 @pytest.fixture
-def repository(tmp_path) -> JsonTransactionRepository:
-    return JsonTransactionRepository(tmp_path / "data" / "transactions.json")
+def repository(tmp_path) -> SQLiteTransactionRepository:
+    return repository_for_path(tmp_path / "data" / "tracker.sqlite3")
+
+
+def repository_for_path(path) -> SQLiteTransactionRepository:
+    database = SQLiteDatabase(path)
+    initialize_schema(database)
+    account_repository = SQLiteAccountRepository(database)
+    if account_repository.get_by_id(ACCOUNT_ID) is None:
+        account_repository.create(ACCOUNT_ID, "Cash")
+    category_repository = SQLiteCategoryRepository(database)
+    if category_repository.get_by_id(CATEGORY_ID) is None:
+        category_repository.create(CATEGORY_ID, "Food", "expense")
+    return SQLiteTransactionRepository(database)
 
 
 @pytest.fixture
@@ -230,64 +243,22 @@ def test_repository_create_rejects_duplicate_internal_id_without_writing(
         description="Duplicate identity",
     )
 
-    with pytest.raises(StorageError, match="Duplicate transaction id"):
+    with pytest.raises(StorageError, match="SQLite transaction failed"):
         repository.create(duplicate)
 
     assert repository.list_all() == [original]
 
 
-def test_create_reads_allocates_and_writes_inside_one_lock(
-    tmp_path,
-    monkeypatch,
-) -> None:
-    repository = JsonTransactionRepository(
-        tmp_path / "data" / "transactions.json"
-    )
-    service = TransactionService(
-        repository,
-        today_provider=lambda: TODAY,
-        utc_now_provider=lambda: NOW,
-    )
-    lock_active = False
-    original_read = storage._read_document
-    original_write = storage._write_document
-
-    @contextmanager
-    def tracking_lock(data_file=None):
-        nonlocal lock_active
-        assert lock_active is False
-        lock_active = True
-        try:
-            yield
-        finally:
-            lock_active = False
-
-    def checked_read(data_file=None):
-        assert lock_active is True
-        return original_read(data_file)
-
-    def checked_write(document, data_file=None):
-        assert lock_active is True
-        return original_write(document, data_file)
-
-    monkeypatch.setattr(storage, "transaction_file_lock", tracking_lock)
-    monkeypatch.setattr(storage, "_read_document", checked_read)
-    monkeypatch.setattr(storage, "_write_document", checked_write)
-
-    transaction = add_expense(service)
-
-    assert transaction.display_id == "T-0001"
-    assert lock_active is False
-
-
 def test_concurrent_creation_has_no_losses_or_duplicate_display_ids(
     tmp_path,
 ) -> None:
-    data_file = tmp_path / "data" / "transactions.json"
+    data_file = tmp_path / "data" / "tracker.sqlite3"
+    initial_repository = repository_for_path(data_file)
+    database = initial_repository._database
 
     def create(index: int) -> Transaction:
         concurrent_service = TransactionService(
-            JsonTransactionRepository(data_file),
+            SQLiteTransactionRepository(database),
             today_provider=lambda: TODAY,
             utc_now_provider=lambda: NOW,
         )
@@ -299,52 +270,11 @@ def test_concurrent_creation_has_no_losses_or_duplicate_display_ids(
     with ThreadPoolExecutor(max_workers=8) as executor:
         created = list(executor.map(create, range(24)))
 
-    reloaded = JsonTransactionRepository(data_file).list_by_date(TODAY)
+    reloaded = SQLiteTransactionRepository(database).list_by_date(TODAY)
     display_ids = {transaction.display_id for transaction in created}
     assert len(reloaded) == 24
     assert len(display_ids) == 24
     assert display_ids == {f"T-{number:04d}" for number in range(1, 25)}
-
-
-def test_replace_and_delete_read_modify_write_are_fully_locked(
-    repository,
-    service,
-    monkeypatch,
-) -> None:
-    transaction = add_expense(service)
-    lock_active = False
-    lock_entries = 0
-    original_read = storage._read_document
-    original_write = storage._write_document
-
-    @contextmanager
-    def tracking_lock(data_file=None):
-        nonlocal lock_active, lock_entries
-        assert lock_active is False
-        lock_active = True
-        lock_entries += 1
-        try:
-            yield
-        finally:
-            lock_active = False
-
-    def checked_read(data_file=None):
-        assert lock_active is True
-        return original_read(data_file)
-
-    def checked_write(document, data_file=None):
-        assert lock_active is True
-        return original_write(document, data_file)
-
-    monkeypatch.setattr(storage, "transaction_file_lock", tracking_lock)
-    monkeypatch.setattr(storage, "_read_document", checked_read)
-    monkeypatch.setattr(storage, "_write_document", checked_write)
-
-    replaced = repository.replace(replace(transaction, amount=15.0))
-    assert repository.delete_by_id(replaced.id) is True
-
-    assert lock_entries == 2
-    assert lock_active is False
 
 
 def test_exact_date_listing_is_isolated_and_deterministic(
@@ -419,15 +349,13 @@ def test_update_preserves_identity_and_creation_time_and_advances_update(
     assert updated.category == "Salary"
     assert updated.account == "Bank"
     assert updated.description == "Correction"
-    assert JsonTransactionRepository(
-        repository._data_file
-    ).get_by_display_id(original.display_id) == updated
+    assert SQLiteTransactionRepository(repository._database).get_by_display_id(original.display_id) == updated
 
 
 def test_unrelated_update_preserves_reference_ids(repository) -> None:
     original = repository.create(
         Transaction(
-            id="transaction-with-references",
+            id="123e4567-e89b-12d3-a456-426614174010",
             display_id=None,
             type="expense",
             amount=10.0,
@@ -462,9 +390,7 @@ def test_unrelated_update_preserves_reference_ids(repository) -> None:
     assert updated.display_id == original.display_id
     assert updated.created_at == NOW
     assert updated.updated_at == LATER
-    assert JsonTransactionRepository(
-        repository._data_file
-    ).get_by_display_id(original.display_id) == updated
+    assert SQLiteTransactionRepository(repository._database).get_by_display_id(original.display_id) == updated
 
 
 def test_metadata_only_update_advances_updated_at(repository) -> None:
@@ -509,6 +435,46 @@ def test_update_missing_transaction_is_not_found(
         service.update_transaction("T-9999", active_date=TODAY, amount=20)
 
 
+def test_update_rejects_a_competing_committed_change(repository) -> None:
+    original_service = TransactionService(
+        repository,
+        today_provider=lambda: TODAY,
+        utc_now_provider=lambda: NOW,
+    )
+    original = add_expense(original_service)
+
+    class CompetingRepository:
+        def __getattr__(self, name):
+            return getattr(repository, name)
+
+        def replace(self, expected, replacement):
+            competing = replace(
+                expected,
+                description="Committed by another writer",
+                updated_at=LATER,
+            )
+            repository.replace(expected, competing)
+            return repository.replace(expected, replacement)
+
+    competing_service = TransactionService(
+        CompetingRepository(),
+        today_provider=lambda: TODAY,
+        utc_now_provider=lambda: LATER,
+    )
+
+    with pytest.raises(TransactionRecordChangedError, match="changed concurrently"):
+        competing_service.update_transaction(
+            original.display_id,
+            active_date=TODAY,
+            amount=20,
+        )
+
+    persisted = repository.get_by_id(original.id)
+    assert persisted is not None
+    assert persisted.description == "Committed by another writer"
+    assert persisted.amount == original.amount
+
+
 def test_update_moves_date_and_survives_reload(repository) -> None:
     service = TransactionService(
         repository,
@@ -523,7 +489,7 @@ def test_update_moves_date_and_survives_reload(repository) -> None:
         transaction_date=TODAY,
     )
 
-    reloaded = JsonTransactionRepository(repository._data_file)
+    reloaded = SQLiteTransactionRepository(repository._database)
     assert moved.id == original.id
     assert moved.display_id == original.display_id
     assert reloaded.list_by_date(PAST_DATE) == []
@@ -533,7 +499,7 @@ def test_update_moves_date_and_survives_reload(repository) -> None:
 def test_legacy_update_preserves_missing_created_at(repository) -> None:
     legacy = repository.create(
         Transaction(
-            id="legacy-uuid",
+            id="123e4567-e89b-12d3-a456-426614174011",
             display_id=None,
             type="expense",
             amount=10.0,
@@ -559,9 +525,7 @@ def test_legacy_update_preserves_missing_created_at(repository) -> None:
 
     assert updated.created_at is None
     assert updated.updated_at == LATER
-    assert JsonTransactionRepository(
-        repository._data_file
-    ).get_by_display_id(legacy.display_id) == updated
+    assert SQLiteTransactionRepository(repository._database).get_by_display_id(legacy.display_id) == updated
 
 
 def test_delete_active_date_match_removes_only_target_and_survives_reload(
@@ -577,7 +541,7 @@ def test_delete_active_date_match_removes_only_target_and_survives_reload(
 
     deleted = service.delete_transaction(target.display_id, active_date=TODAY)
 
-    reloaded = JsonTransactionRepository(repository._data_file)
+    reloaded = SQLiteTransactionRepository(repository._database)
     assert deleted == target
     assert reloaded.get_by_display_id(target.display_id) is None
     assert reloaded.list_by_date(TODAY) == [survivor]
@@ -599,46 +563,3 @@ def test_delete_missing_transaction_is_not_found(
 ) -> None:
     with pytest.raises(TransactionNotFoundError):
         service.delete_transaction("T-9999", active_date=TODAY)
-
-
-def test_repository_uses_atomic_writer(repository, service, monkeypatch) -> None:
-    called = False
-    original_write = storage.write_json_atomic
-
-    def tracking_write(*args, **kwargs):
-        nonlocal called
-        called = True
-        return original_write(*args, **kwargs)
-
-    monkeypatch.setattr(storage, "write_json_atomic", tracking_write)
-
-    add_expense(service)
-
-    assert called is True
-
-
-@pytest.mark.parametrize(
-    "document",
-    [
-        {"metadata": {"next_display_id": 1}, "transactions": ["bad"]},
-        {
-            "schema_version": 99,
-            "metadata": {"next_display_id": 1},
-            "transactions": [],
-        },
-    ],
-)
-def test_repository_fails_safely_on_invalid_storage(
-    tmp_path,
-    document,
-) -> None:
-    data_file = tmp_path / "data" / "transactions.json"
-    data_file.parent.mkdir(parents=True)
-    original = json.dumps(document)
-    data_file.write_text(original, encoding="utf-8")
-    repository = JsonTransactionRepository(data_file)
-
-    with pytest.raises(StorageError):
-        repository.list_date_summaries()
-
-    assert data_file.read_text(encoding="utf-8") == original

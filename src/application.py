@@ -1,4 +1,4 @@
-"""Application service composition for one workspace and storage backend."""
+"""Application service composition for one SQLite workspace."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -6,30 +6,25 @@ from functools import partial
 from pathlib import Path
 
 from account import Account
-from account_repository import AccountRepository, JsonAccountRepository
+from account_repository import AccountRepository
 from account_service import AccountService
 from category import Category
-from category_repository import CategoryRepository, JsonCategoryRepository
+from category_repository import CategoryRepository
 from category_service import CategoryService
 from clock import TodayProvider, UtcNowProvider, local_today, utc_now
 from excel_import_service import ExcelImportService
 from sqlite_account_repository import SQLiteAccountRepository
 from sqlite_category_repository import SQLiteCategoryRepository
 from sqlite_database import SQLiteDatabase
-from sqlite_migration import json_workspace_exists, migrate_json_to_sqlite
 from sqlite_schema import initialize_schema
 from sqlite_transaction_repository import SQLiteTransactionRepository
-from transaction_repository import (
-    JsonTransactionRepository,
-    TransactionRepository,
-)
+from transaction_repository import TransactionRepository
 from transaction_service import TransactionService
 
 AccountList = Callable[[], list[Account]]
 CategoryList = Callable[..., list[Category]]
 AccountLookup = Callable[[str], Account | None]
 CategoryLookup = Callable[[str], Category | None]
-SUPPORTED_STORAGE_BACKENDS = frozenset({"json", "sqlite"})
 
 
 @dataclass(frozen=True)
@@ -49,15 +44,6 @@ class ApplicationServices:
     category_lookup: CategoryLookup
     account_display_lookup: AccountLookup
     category_display_lookup: CategoryLookup
-
-
-def _workspace_data_path(
-    workspace_root: Path | str | None,
-    filename: str,
-) -> Path:
-    if workspace_root is None:
-        return Path("data") / filename
-    return Path(workspace_root) / "data" / filename
 
 
 def _compose_application(
@@ -110,53 +96,29 @@ def _compose_application(
     )
 
 
-def build_json_application(
+def build_application(
     workspace_root: Path | str | None = None,
     *,
     today_provider: TodayProvider = local_today,
     utc_now_provider: UtcNowProvider = utc_now,
 ) -> ApplicationServices:
-    """Compose application services for the current JSON persistence backend."""
-    account_repository = JsonAccountRepository(
-        _workspace_data_path(workspace_root, "accounts.json"),
-        _workspace_data_path(workspace_root, "accounts_state.json"),
-    )
-    category_repository = JsonCategoryRepository(
-        _workspace_data_path(workspace_root, "categories.json"),
-        _workspace_data_path(workspace_root, "categories_state.json"),
-    )
-    transaction_repository = JsonTransactionRepository(
-        _workspace_data_path(workspace_root, "transactions.json")
-    )
-
-    return _compose_application(
-        account_repository,
-        category_repository,
-        transaction_repository,
+    """Compose all application services for one SQLite workspace."""
+    database = SQLiteDatabase.for_workspace(workspace_root)
+    initialize_schema(database)
+    return compose_application(
+        database,
         today_provider=today_provider,
         utc_now_provider=utc_now_provider,
     )
 
 
-def build_sqlite_application(
-    workspace_root: Path | str | None = None,
+def compose_application(
+    database: SQLiteDatabase,
     *,
     today_provider: TodayProvider = local_today,
     utc_now_provider: UtcNowProvider = utc_now,
-    migrate_json: bool = False,
-    auto_migrate_json: bool = True,
 ) -> ApplicationServices:
-    """Compose SQLite services with guarded first-start JSON migration."""
-    database = SQLiteDatabase.for_workspace(workspace_root)
-    should_auto_migrate = (
-        auto_migrate_json
-        and not database.path.exists()
-        and json_workspace_exists(workspace_root)
-    )
-    if migrate_json or should_auto_migrate:
-        migrate_json_to_sqlite(workspace_root, database=database)
-    else:
-        initialize_schema(database)
+    """Compose services around an initialized or deliberately lazy database."""
     return _compose_application(
         SQLiteAccountRepository(database),
         SQLiteCategoryRepository(database),
@@ -166,35 +128,5 @@ def build_sqlite_application(
     )
 
 
-def build_application(
-    workspace_root: Path | str | None = None,
-    *,
-    backend: str = "sqlite",
-    migrate_json: bool = False,
-    auto_migrate_json: bool = True,
-    today_provider: TodayProvider = local_today,
-    utc_now_provider: UtcNowProvider = utc_now,
-) -> ApplicationServices:
-    """Compose one backend; SQLite is primary and JSON is compatibility."""
-    if not isinstance(backend, str):
-        raise ValueError("Storage backend must be json or sqlite.")
-    normalized_backend = backend.strip().casefold()
-    if normalized_backend not in SUPPORTED_STORAGE_BACKENDS:
-        raise ValueError(
-            f"Unsupported storage backend {backend!r}; choose json or sqlite."
-        )
-    if migrate_json and normalized_backend != "sqlite":
-        raise ValueError("JSON migration is only valid with the sqlite backend.")
-    if normalized_backend == "sqlite":
-        return build_sqlite_application(
-            workspace_root,
-            migrate_json=migrate_json,
-            auto_migrate_json=auto_migrate_json,
-            today_provider=today_provider,
-            utc_now_provider=utc_now_provider,
-        )
-    return build_json_application(
-        workspace_root,
-        today_provider=today_provider,
-        utc_now_provider=utc_now_provider,
-    )
+# Backward-compatible alias for integrations that used the explicit name.
+build_sqlite_application = build_application

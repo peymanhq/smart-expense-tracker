@@ -13,18 +13,19 @@ from account_service import (
     list_accounts,
     rename_account,
 )
-from account_repository import JsonAccountRepository
+from sqlite_account_repository import SQLiteAccountRepository
+from sqlite_database import SQLiteDatabase
+from sqlite_schema import initialize_schema
 
 
 @pytest.fixture
-def repository(tmp_path: Path) -> JsonAccountRepository:
-    return JsonAccountRepository(
-        tmp_path / "data" / "accounts.json",
-        tmp_path / "data" / "accounts_state.json",
-    )
+def repository(tmp_path: Path) -> SQLiteAccountRepository:
+    database = SQLiteDatabase(tmp_path / "data" / "tracker.sqlite3")
+    initialize_schema(database)
+    return SQLiteAccountRepository(database)
 
 
-def test_create_valid_account(repository: JsonAccountRepository) -> None:
+def test_create_valid_account(repository: SQLiteAccountRepository) -> None:
     result = add_account("Cash", repository)
 
     assert result.success is True
@@ -35,7 +36,7 @@ def test_create_valid_account(repository: JsonAccountRepository) -> None:
     assert str(UUID(result.account.id)) == result.account.id
 
 
-def test_account_name_is_trimmed(repository: JsonAccountRepository) -> None:
+def test_account_name_is_trimmed(repository: SQLiteAccountRepository) -> None:
     result = add_account("  Bank Account  ", repository)
 
     assert result.account is not None
@@ -43,7 +44,7 @@ def test_account_name_is_trimmed(repository: JsonAccountRepository) -> None:
 
 
 def test_account_queries_list_filter_and_order_deterministically(
-    repository: JsonAccountRepository,
+    repository: SQLiteAccountRepository,
 ) -> None:
     first = add_account("Cash", repository).account
     second = add_account("Bank", repository).account
@@ -71,7 +72,7 @@ def test_account_queries_list_filter_and_order_deterministically(
 
 
 def test_account_queries_resolve_active_and_inactive_records(
-    repository: JsonAccountRepository,
+    repository: SQLiteAccountRepository,
 ) -> None:
     active = add_account("Cash", repository).account
     inactive = add_account("Bank", repository).account
@@ -93,7 +94,7 @@ def test_account_queries_resolve_active_and_inactive_records(
     assert get_account_by_display_id("account-1", repository) is None
 
 
-def test_empty_account_name_is_rejected(repository: JsonAccountRepository) -> None:
+def test_empty_account_name_is_rejected(repository: SQLiteAccountRepository) -> None:
     result = add_account(" \t ", repository)
 
     assert result.success is False
@@ -102,7 +103,7 @@ def test_empty_account_name_is_rejected(repository: JsonAccountRepository) -> No
 
 
 def test_duplicate_active_name_is_case_insensitive(
-    repository: JsonAccountRepository,
+    repository: SQLiteAccountRepository,
 ) -> None:
     assert add_account("Cash", repository).success is True
 
@@ -114,7 +115,7 @@ def test_duplicate_active_name_is_case_insensitive(
 
 
 def test_duplicate_active_name_is_unicode_normalized(
-    repository: JsonAccountRepository,
+    repository: SQLiteAccountRepository,
 ) -> None:
     assert add_account("Café", repository).success is True
 
@@ -126,7 +127,7 @@ def test_duplicate_active_name_is_unicode_normalized(
 
 
 def test_account_display_ids_are_sequential(
-    repository: JsonAccountRepository,
+    repository: SQLiteAccountRepository,
 ) -> None:
     first = add_account("Cash", repository)
     second = add_account("Bank", repository)
@@ -139,7 +140,7 @@ def test_account_display_ids_are_sequential(
 
 
 def test_rename_account_preserves_identifiers(
-    repository: JsonAccountRepository,
+    repository: SQLiteAccountRepository,
 ) -> None:
     created = add_account("Cash", repository).account
     assert created is not None
@@ -155,7 +156,7 @@ def test_rename_account_preserves_identifiers(
 
 
 def test_rename_rejects_duplicate_active_name(
-    repository: JsonAccountRepository,
+    repository: SQLiteAccountRepository,
 ) -> None:
     add_account("Cash", repository)
     add_account("Bank", repository)
@@ -171,7 +172,7 @@ def test_rename_rejects_duplicate_active_name(
 
 
 def test_rename_inactive_account_can_match_active_name(
-    repository: JsonAccountRepository,
+    repository: SQLiteAccountRepository,
 ) -> None:
     add_account("Cash", repository)
     add_account("Bank", repository)
@@ -186,7 +187,7 @@ def test_rename_inactive_account_can_match_active_name(
 
 
 def test_deactivate_account_keeps_record_in_storage(
-    repository: JsonAccountRepository,
+    repository: SQLiteAccountRepository,
 ) -> None:
     created = add_account("Cash", repository).account
     assert created is not None
@@ -202,7 +203,7 @@ def test_deactivate_account_keeps_record_in_storage(
 
 
 def test_display_id_is_not_reused_after_deactivation(
-    repository: JsonAccountRepository,
+    repository: SQLiteAccountRepository,
 ) -> None:
     add_account("Cash", repository)
     deactivate_account("A-0001", repository)
@@ -214,7 +215,7 @@ def test_display_id_is_not_reused_after_deactivation(
 
 
 def test_activate_account_preserves_identifiers(
-    repository: JsonAccountRepository,
+    repository: SQLiteAccountRepository,
 ) -> None:
     created = add_account("Cash", repository).account
     assert created is not None
@@ -231,7 +232,7 @@ def test_activate_account_preserves_identifiers(
 
 
 def test_activate_rejects_duplicate_active_name(
-    repository: JsonAccountRepository,
+    repository: SQLiteAccountRepository,
 ) -> None:
     add_account("Cash", repository)
     deactivate_account("A-0001", repository)
@@ -252,7 +253,7 @@ def test_activate_rejects_duplicate_active_name(
 )
 def test_missing_account_returns_clear_result(
     operation,
-    repository: JsonAccountRepository,
+    repository: SQLiteAccountRepository,
 ) -> None:
     if operation is rename_account:
         result = operation("A-9999", "Wallet", repository)
@@ -264,7 +265,7 @@ def test_missing_account_returns_clear_result(
 
 
 def test_non_text_display_id_returns_not_found(
-    repository: JsonAccountRepository,
+    repository: SQLiteAccountRepository,
 ) -> None:
     add_account("Cash", repository)
 
@@ -275,7 +276,7 @@ def test_non_text_display_id_returns_not_found(
 
 
 def test_deactivating_inactive_account_returns_clear_result(
-    repository: JsonAccountRepository,
+    repository: SQLiteAccountRepository,
 ) -> None:
     add_account("Cash", repository)
     deactivate_account("A-0001", repository)
@@ -287,7 +288,7 @@ def test_deactivating_inactive_account_returns_clear_result(
 
 
 def test_activating_active_account_returns_clear_result(
-    repository: JsonAccountRepository,
+    repository: SQLiteAccountRepository,
 ) -> None:
     add_account("Cash", repository)
 
@@ -298,7 +299,7 @@ def test_activating_active_account_returns_clear_result(
 
 
 def test_display_id_lookup_normalizes_case_whitespace_and_padding(
-    repository: JsonAccountRepository,
+    repository: SQLiteAccountRepository,
 ) -> None:
     add_account("Cash", repository)
 
@@ -314,7 +315,7 @@ def test_display_id_lookup_normalizes_case_whitespace_and_padding(
 
 
 def test_concurrent_account_additions_are_not_lost(
-    repository: JsonAccountRepository,
+    repository: SQLiteAccountRepository,
 ) -> None:
     worker_count = 12
     start = Barrier(worker_count)

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+import main
 from excel_import import ExcelImportIssue, InvalidExcelWorkbookError
 from excel_import_service import (
     ExcelImportPreview,
@@ -12,7 +13,6 @@ from excel_import_service import (
     ResolvedExcelImportRow,
 )
 from excel_workbook import ExcelSaveError
-import main
 
 
 def candidate(
@@ -304,7 +304,6 @@ def test_main_menu_reaches_import_and_template_options(
             "9": lambda: calls.append("template"),
         },
     )
-    monkeypatch.setenv("SMART_EXPENSE_TRACKER_BACKEND", "json")
 
     main.main()
 

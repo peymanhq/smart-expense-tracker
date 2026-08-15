@@ -3,15 +3,20 @@
 import sqlite3
 from dataclasses import replace
 from datetime import date
+from decimal import Decimal
 from uuid import UUID
 
 from id_generator import generate_display_id, parse_display_id
 from persistence_errors import StorageError
+from report import FinancialSummary
 from sqlite_database import SQLiteDatabase
 from transaction import Transaction
 from transaction_repository import (
     RepositoryTransactionNotFoundError,
+    RepositoryTransactionRecordChangedError,
     TransactionDateSummary,
+    TransactionPage,
+    TransactionQuery,
     _validate_bulk_conflicts,
 )
 from validators import (
@@ -27,6 +32,44 @@ _TRANSACTION_COLUMNS = (
     "id, display_id, type, amount, category, category_id, account, "
     "account_id, description, transaction_date, created_at, updated_at"
 )
+
+
+def _query_parts(criteria: TransactionQuery) -> tuple[str, list[object]]:
+    clauses: list[str] = []
+    parameters: list[object] = []
+    exact_casefold = {
+        "type": criteria.transaction_type,
+        "category": criteria.category,
+        "account": criteria.account,
+    }
+    for column, value in exact_casefold.items():
+        if value is not None:
+            clauses.append(f"CASEFOLD({column}) = ?")
+            parameters.append(value.casefold())
+    if criteria.description is not None:
+        clauses.append("instr(CASEFOLD(description), ?) > 0")
+        parameters.append(criteria.description.casefold())
+    if criteria.transaction_date is not None:
+        clauses.append("transaction_date = ?")
+        parameters.append(criteria.transaction_date.isoformat())
+    if criteria.start_date is not None:
+        clauses.append("transaction_date >= ?")
+        parameters.append(criteria.start_date.isoformat())
+    if criteria.end_date is not None:
+        clauses.append("transaction_date <= ?")
+        parameters.append(criteria.end_date.isoformat())
+    if criteria.text_query is not None:
+        clauses.append(
+            "(" + " OR ".join(
+                f"instr(CASEFOLD({column}), ?) > 0"
+                for column in (
+                    "type", "category", "account", "description",
+                    "transaction_date", "id", "display_id",
+                )
+            ) + ")"
+        )
+        parameters.extend([criteria.text_query.casefold()] * 7)
+    return (" WHERE " + " AND ".join(clauses)) if clauses else "", parameters
 
 
 def _validate_transaction(transaction: Transaction) -> None:
@@ -296,7 +339,58 @@ class SQLiteTransactionRepository:
                 f"SQLite Transaction date summary is invalid: {error}"
             ) from error
 
-    def replace(self, transaction: Transaction) -> Transaction:
+    def query(self, criteria: TransactionQuery) -> TransactionPage:
+        where, parameters = _query_parts(criteria)
+        if criteria.offset < 0 or (
+            criteria.limit is not None and criteria.limit <= 0
+        ):
+            raise ValueError("Query limit and offset must be positive.")
+        with self._database.connection() as connection:
+            total = connection.execute(
+                f"SELECT COUNT(*) FROM transactions{where}",
+                parameters,
+            ).fetchone()[0]
+            pagination = ""
+            page_parameters = list(parameters)
+            if criteria.limit is not None:
+                pagination = " LIMIT ? OFFSET ?"
+                page_parameters.extend([criteria.limit, criteria.offset])
+            rows = connection.execute(
+                f"SELECT {_TRANSACTION_COLUMNS} FROM transactions{where} "
+                "ORDER BY transaction_date DESC, "
+                "CAST(substr(display_id, 3) AS INTEGER), display_id"
+                f"{pagination}",
+                page_parameters,
+            ).fetchall()
+        return TransactionPage(
+            items=[_transaction_from_row(row) for row in rows],
+            total_count=total,
+            limit=criteria.limit,
+            offset=criteria.offset,
+        )
+
+    def summarize(self, criteria: TransactionQuery) -> FinancialSummary:
+        where, parameters = _query_parts(criteria)
+        with self._database.connection() as connection:
+            rows = connection.execute(
+                f"SELECT type, amount FROM transactions{where}",
+                parameters,
+            ).fetchall()
+        income = Decimal("0")
+        expense = Decimal("0")
+        for row in rows:
+            amount = validate_serialized_amount(row["amount"])
+            if row["type"] == "income":
+                income += amount
+            elif row["type"] == "expense":
+                expense += amount
+        return FinancialSummary(income, expense, income - expense, len(rows))
+
+    def replace(
+        self,
+        expected: Transaction,
+        replacement: Transaction,
+    ) -> Transaction:
         with self._database.transaction() as connection:
             row = connection.execute(
                 f"""
@@ -304,15 +398,17 @@ class SQLiteTransactionRepository:
                 FROM transactions
                 WHERE id = ?
                 """,
-                (transaction.id,),
+                (expected.id,),
             ).fetchone()
             if row is None:
                 raise RepositoryTransactionNotFoundError(
-                    f"Transaction id {transaction.id} no longer exists."
+                    f"Transaction id {expected.id} no longer exists."
                 )
             existing = _transaction_from_row(row)
+            if existing != expected:
+                raise RepositoryTransactionRecordChangedError(expected.id)
             persisted = replace(
-                transaction,
+                replacement,
                 id=existing.id,
                 display_id=existing.display_id,
                 created_at=existing.created_at,

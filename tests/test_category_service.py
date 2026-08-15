@@ -13,19 +13,20 @@ from category_service import (
     list_categories,
     rename_category,
 )
-from category_repository import JsonCategoryRepository
+from sqlite_category_repository import SQLiteCategoryRepository
+from sqlite_database import SQLiteDatabase
+from sqlite_schema import initialize_schema
 
 
 @pytest.fixture
-def repository(tmp_path: Path) -> JsonCategoryRepository:
-    return JsonCategoryRepository(
-        tmp_path / "nested" / "categories.json",
-        tmp_path / "nested" / "categories_state.json",
-    )
+def repository(tmp_path: Path) -> SQLiteCategoryRepository:
+    database = SQLiteDatabase(tmp_path / "nested" / "tracker.sqlite3")
+    initialize_schema(database)
+    return SQLiteCategoryRepository(database)
 
 
 def test_add_category_normalizes_and_persists_valid_category(
-    repository: JsonCategoryRepository,
+    repository: SQLiteCategoryRepository,
 ) -> None:
     result = add_category("  Café  ", " ExPENSE ", repository)
 
@@ -40,7 +41,7 @@ def test_add_category_normalizes_and_persists_valid_category(
 
 
 def test_category_queries_list_filter_and_order_deterministically(
-    repository: JsonCategoryRepository,
+    repository: SQLiteCategoryRepository,
 ) -> None:
     income = add_category("Salary", "income", repository).category
     inactive_expense = add_category(
@@ -89,7 +90,7 @@ def test_category_queries_list_filter_and_order_deterministically(
 
 
 def test_category_queries_resolve_active_and_inactive_records(
-    repository: JsonCategoryRepository,
+    repository: SQLiteCategoryRepository,
 ) -> None:
     active = add_category("Salary", "income", repository).category
     inactive = add_category("Food", "expense", repository).category
@@ -114,7 +115,7 @@ def test_category_queries_resolve_active_and_inactive_records(
 @pytest.mark.parametrize("transaction_type", ["transfer", "", 42])
 def test_category_query_rejects_invalid_transaction_type(
     transaction_type,
-    repository: JsonCategoryRepository,
+    repository: SQLiteCategoryRepository,
 ) -> None:
     with pytest.raises(ValueError, match="Invalid transaction type"):
         list_categories(
@@ -136,7 +137,7 @@ def test_add_category_rejects_invalid_input(
     name,
     transaction_type,
     message: str,
-    repository: JsonCategoryRepository,
+    repository: SQLiteCategoryRepository,
 ) -> None:
     result = add_category(name, transaction_type, repository)
 
@@ -146,7 +147,7 @@ def test_add_category_rejects_invalid_input(
 
 
 def test_duplicate_active_name_is_scoped_to_transaction_type(
-    repository: JsonCategoryRepository,
+    repository: SQLiteCategoryRepository,
 ) -> None:
     assert add_category("Food", "expense", repository).success
 
@@ -160,7 +161,7 @@ def test_duplicate_active_name_is_scoped_to_transaction_type(
 
 
 def test_unicode_equivalent_active_name_is_duplicate(
-    repository: JsonCategoryRepository,
+    repository: SQLiteCategoryRepository,
 ) -> None:
     assert add_category("Café", "expense", repository).success
 
@@ -171,7 +172,7 @@ def test_unicode_equivalent_active_name_is_duplicate(
 
 
 def test_inactive_name_can_be_reused_and_blocks_reactivation(
-    repository: JsonCategoryRepository,
+    repository: SQLiteCategoryRepository,
 ) -> None:
     add_category("Food", "expense", repository)
     deactivate_category("C-0001", repository)
@@ -188,7 +189,7 @@ def test_inactive_name_can_be_reused_and_blocks_reactivation(
 
 
 def test_display_ids_are_sequential_and_not_reused_after_deactivation(
-    repository: JsonCategoryRepository,
+    repository: SQLiteCategoryRepository,
 ) -> None:
     first = add_category("Food", "expense", repository)
     deactivate_category("C-0001", repository)
@@ -203,7 +204,7 @@ def test_display_ids_are_sequential_and_not_reused_after_deactivation(
 
 
 def test_rename_preserves_all_fields_except_trimmed_name(
-    repository: JsonCategoryRepository,
+    repository: SQLiteCategoryRepository,
 ) -> None:
     created = add_category("Food", "expense", repository).category
     assert created is not None
@@ -221,7 +222,7 @@ def test_rename_preserves_all_fields_except_trimmed_name(
 
 
 def test_active_rename_duplicate_rules_are_scoped_to_type(
-    repository: JsonCategoryRepository,
+    repository: SQLiteCategoryRepository,
 ) -> None:
     add_category("Food", "expense", repository)
     add_category("Travel", "expense", repository)
@@ -236,7 +237,7 @@ def test_active_rename_duplicate_rules_are_scoped_to_type(
 
 
 def test_inactive_category_can_be_renamed_to_active_duplicate(
-    repository: JsonCategoryRepository,
+    repository: SQLiteCategoryRepository,
 ) -> None:
     add_category("Food", "expense", repository)
     add_category("Travel", "expense", repository)
@@ -251,7 +252,7 @@ def test_inactive_category_can_be_renamed_to_active_duplicate(
 
 
 def test_deactivate_and_activate_preserve_record_identity(
-    repository: JsonCategoryRepository,
+    repository: SQLiteCategoryRepository,
 ) -> None:
     created = add_category("Salary", "income", repository).category
     assert created is not None
@@ -274,7 +275,7 @@ def test_deactivate_and_activate_preserve_record_identity(
 
 
 def test_already_active_and_inactive_return_explicit_results(
-    repository: JsonCategoryRepository,
+    repository: SQLiteCategoryRepository,
 ) -> None:
     add_category("Food", "expense", repository)
 
@@ -294,7 +295,7 @@ def test_already_active_and_inactive_return_explicit_results(
 )
 def test_missing_category_returns_explicit_result(
     operation,
-    repository: JsonCategoryRepository,
+    repository: SQLiteCategoryRepository,
 ) -> None:
     if operation is rename_category:
         result = operation("C-9999", "Dining", repository)
@@ -306,7 +307,7 @@ def test_missing_category_returns_explicit_result(
 
 
 def test_rename_rejects_empty_name(
-    repository: JsonCategoryRepository,
+    repository: SQLiteCategoryRepository,
 ) -> None:
     add_category("Food", "expense", repository)
 
@@ -318,7 +319,7 @@ def test_rename_rejects_empty_name(
 
 
 def test_rename_rejects_non_text_name(
-    repository: JsonCategoryRepository,
+    repository: SQLiteCategoryRepository,
 ) -> None:
     add_category("Food", "expense", repository)
 
@@ -330,7 +331,7 @@ def test_rename_rejects_non_text_name(
 
 
 def test_list_categories_orders_by_type_then_display_id(
-    repository: JsonCategoryRepository,
+    repository: SQLiteCategoryRepository,
 ) -> None:
     add_category("Salary", "income", repository)
     add_category("Food", "expense", repository)
@@ -344,7 +345,7 @@ def test_list_categories_orders_by_type_then_display_id(
 
 
 def test_concurrent_category_additions_are_not_lost(
-    repository: JsonCategoryRepository,
+    repository: SQLiteCategoryRepository,
 ) -> None:
     worker_count = 12
     start = Barrier(worker_count)

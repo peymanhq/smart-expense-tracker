@@ -45,6 +45,12 @@ jobs:
       - name: Run static type checking
         run: python -m mypy
 
+      - name: Run lint checks
+        run: python -m ruff check src tests
+
+      - name: Audit Python dependencies
+        run: python -m pip_audit --skip-editable
+
       - name: Compile Python sources and tests
         run: python -m compileall -q src tests
 
@@ -71,7 +77,7 @@ jobs:
           wheel_venv="$RUNNER_TEMP/wheel-venv"
           python -m venv "$wheel_venv"
           "$wheel_venv/bin/python" -m pip install dist/*.whl
-          "$wheel_venv/bin/python" -c "import main, telegram_bot; assert callable(main.main); assert callable(telegram_bot.main)"
+          "$wheel_venv/bin/python" -c "import smart_expense_tracker; from smart_expense_tracker.cli import main; assert callable(main)"
           test -x "$wheel_venv/bin/expense-tracker"
           test -x "$wheel_venv/bin/expense-tracker-storage"
           test -x "$wheel_venv/bin/expense-tracker-telegram"

@@ -4,7 +4,6 @@ import pytest
 
 from transaction_factory import create_transaction
 
-
 ACCOUNT_ID = "123e4567-e89b-12d3-a456-426614174000"
 CATEGORY_ID = "123e4567-e89b-12d3-a456-426614174001"
 

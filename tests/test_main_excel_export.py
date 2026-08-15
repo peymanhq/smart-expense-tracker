@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from account import Account
-from excel_exporter import ExcelSaveError
 import main
+from account import Account
 from category import Category
+from excel_exporter import ExcelSaveError
 
 
 class ExportService:
@@ -185,7 +185,6 @@ def test_main_menu_dispatches_excel_export(monkeypatch) -> None:
         "MENU_ACTIONS",
         {**main.MENU_ACTIONS, "7": lambda: calls.append("export")},
     )
-    monkeypatch.setenv("SMART_EXPENSE_TRACKER_BACKEND", "json")
 
     main.main()
 

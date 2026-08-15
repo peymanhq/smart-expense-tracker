@@ -1,28 +1,28 @@
 """Application and atomic persistence tests for Excel import."""
 
-from contextlib import contextmanager
 from datetime import date, datetime, timezone
-import json
 from pathlib import Path
 
-from openpyxl import Workbook, load_workbook
 import pytest
+from openpyxl import Workbook, load_workbook
 
 from account import Account
 from category import Category
 from excel_exporter import export_transactions_to_excel
-from excel_template import generate_excel_import_template
 from excel_import_service import (
     ExcelImportPersistenceConflictError,
     ExcelImportPersistenceValidationError,
     ExcelImportService,
     InvalidExcelImportPreviewError,
 )
+from excel_template import generate_excel_import_template
 from excel_workbook import REQUIRED_TRANSACTION_HEADERS
-from json_storage import StorageError
-import storage
+from sqlite_account_repository import SQLiteAccountRepository
+from sqlite_category_repository import SQLiteCategoryRepository
+from sqlite_database import SQLiteDatabase
+from sqlite_schema import initialize_schema
+from sqlite_transaction_repository import SQLiteTransactionRepository
 from transaction import Transaction
-from transaction_repository import JsonTransactionRepository
 from transaction_service import TransactionService
 
 TODAY = date(2026, 7, 27)
@@ -104,8 +104,20 @@ def categories() -> list[Category]:
 
 
 @pytest.fixture
-def repository(tmp_path) -> JsonTransactionRepository:
-    return JsonTransactionRepository(tmp_path / "data" / "transactions.json")
+def repository(tmp_path, accounts, categories) -> SQLiteTransactionRepository:
+    database = SQLiteDatabase(tmp_path / "data" / "tracker.sqlite3")
+    initialize_schema(database)
+    account_repository = SQLiteAccountRepository(database)
+    category_repository = SQLiteCategoryRepository(database)
+    for account in accounts:
+        account_repository.create(account.id, account.name)
+    for category in categories:
+        category_repository.create(
+            category.id,
+            category.name,
+            category.transaction_type,
+        )
+    return SQLiteTransactionRepository(database)
 
 
 @pytest.fixture
@@ -542,71 +554,6 @@ def test_deleted_display_ids_are_not_reused_by_bulk_import(
     ]
 
 
-def test_bulk_import_uses_one_transaction_lock(
-    tmp_path,
-    import_service,
-    monkeypatch,
-) -> None:
-    source = write_import(
-        tmp_path / "one-lock.xlsx",
-        [
-            row(description="First"),
-            row(amount=20, description="Second"),
-        ],
-    )
-    preview = import_service.analyze(source)
-    original_lock = storage.transaction_file_lock
-    calls = 0
-
-    @contextmanager
-    def counting_lock(data_file=None):
-        nonlocal calls
-        calls += 1
-        with original_lock(data_file):
-            yield
-
-    monkeypatch.setattr(storage, "transaction_file_lock", counting_lock)
-
-    import_service.persist(preview)
-
-    assert calls == 1
-
-
-def test_persistence_failure_preserves_original_document(
-    tmp_path,
-    import_service,
-    transaction_service,
-    repository,
-    monkeypatch,
-) -> None:
-    transaction_service.add_transaction(
-        transaction_date=date(2026, 7, 20),
-        transaction_type="expense",
-        amount=5,
-        category="Food",
-        account="Cash",
-        description="Existing",
-        account_id=ACCOUNT_ID,
-        category_id=EXPENSE_CATEGORY_ID,
-    )
-    data_file = repository._data_file
-    original = data_file.read_text(encoding="utf-8")
-    source = write_import(
-        tmp_path / "failure.xlsx",
-        [row(description="New")],
-    )
-    preview = import_service.analyze(source)
-
-    def fail_write(document, data_file=None):
-        raise StorageError("disk full")
-
-    monkeypatch.setattr(storage, "_write_document", fail_write)
-
-    with pytest.raises(StorageError, match="disk full"):
-        import_service.persist(preview)
-    assert data_file.read_text(encoding="utf-8") == original
-
-
 def test_late_duplicate_after_preview_blocks_entire_import(
     tmp_path,
     import_service,
@@ -683,7 +630,7 @@ def test_importing_same_workbook_twice_is_blocked(
     assert len(transaction_service.list_transactions()) == 1
 
 
-def test_candidate_document_advances_metadata_once(tmp_path, import_service) -> None:
+def test_bulk_import_advances_counter_once(tmp_path, import_service) -> None:
     source = write_import(
         tmp_path / "metadata.xlsx",
         [
@@ -692,12 +639,16 @@ def test_candidate_document_advances_metadata_once(tmp_path, import_service) -> 
         ],
     )
     result = import_service.persist(import_service.analyze(source))
-    data_file = import_service._transaction_service._repository._data_file
-    document = json.loads(data_file.read_text(encoding="utf-8"))
+    repository = import_service._transaction_service._repository
+    with repository._database.connection() as connection:
+        next_value = connection.execute(
+            "SELECT next_value FROM display_id_counters "
+            "WHERE entity_type = 'transaction'"
+        ).fetchone()[0]
 
     assert len(result.transactions) == 2
-    assert document["metadata"]["next_display_id"] == 3
-    assert [item["display_id"] for item in document["transactions"]] == [
+    assert next_value == 3
+    assert [item.display_id for item in repository.list_all()] == [
         "T-0001",
         "T-0002",
     ]

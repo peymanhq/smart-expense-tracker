@@ -1,11 +1,12 @@
 """Workbook-level tests for the Excel reporting adapter."""
 
+import stat
 from copy import deepcopy
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from openpyxl import load_workbook
 import pytest
+from openpyxl import load_workbook
 
 import excel_exporter
 from excel_exporter import (
@@ -66,6 +67,7 @@ def test_export_creates_reopenable_workbook_with_deterministic_sheets(
 
     assert result == tmp_path / "report.xlsx"
     assert result.is_file()
+    assert stat.S_IMODE(result.stat().st_mode) == 0o600
     assert workbook.sheetnames == [
         "Transactions",
         "Summary",

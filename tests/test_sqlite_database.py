@@ -1,6 +1,7 @@
 """SQLite path, connection, and transaction foundation contracts."""
 
 import sqlite3
+import stat
 from pathlib import Path
 
 import pytest
@@ -49,6 +50,8 @@ def test_connection_creates_parent_and_configures_rows_and_pragmas(
     assert foreign_keys[0] == 1
     assert busy_timeout[0] == 5_000
     assert database.path.exists()
+    assert stat.S_IMODE(database.path.parent.stat().st_mode) == 0o700
+    assert stat.S_IMODE(database.path.stat().st_mode) == 0o600
 
 
 def test_connections_are_not_shared(tmp_path: Path) -> None:

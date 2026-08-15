@@ -3,9 +3,10 @@
 from datetime import date, datetime
 from pathlib import Path
 
-from openpyxl import Workbook
 import pytest
+from openpyxl import Workbook
 
+import excel_import
 from excel_import import (
     ExcelImportFileNotFoundError,
     InvalidExcelHeadersError,
@@ -14,7 +15,6 @@ from excel_import import (
     UnsupportedExcelImportFileError,
     parse_excel_transactions,
 )
-import excel_import
 from excel_workbook import REQUIRED_TRANSACTION_HEADERS
 
 
