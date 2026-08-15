@@ -13,18 +13,21 @@ from date_policy import (
     ValidatedDateQuery,
     validate_date_query,
 )
+from report import FinancialSummary
 from transaction import Transaction
 from transaction_factory import create_transaction
 from transaction_repository import (
     RepositoryTransactionConflictError,
     RepositoryTransactionNotFoundError,
+    RepositoryTransactionRecordChangedError,
     TransactionDateSummary,
+    TransactionPage,
+    TransactionQuery,
     TransactionRepository,
 )
 from validators import (
     AmountInput,
     validate_optional_uuid,
-    validate_transaction_date,
     validate_transaction_type,
     validate_utc_datetime,
 )
@@ -64,6 +67,17 @@ class TransactionNotFoundError(TransactionServiceError, LookupError):
     def __init__(self, display_id: str) -> None:
         self.display_id = display_id
         super().__init__(f"Transaction {display_id.strip().upper()} was not found.")
+
+
+class TransactionRecordChangedError(TransactionServiceError):
+    """Raised when a concurrent writer changed the selected transaction."""
+
+    def __init__(self, display_id: str) -> None:
+        self.display_id = display_id
+        super().__init__(
+            f"Transaction {display_id.strip().upper()} changed concurrently; "
+            "reload it before retrying."
+        )
 
 
 class TransactionActiveDateMismatchError(TransactionServiceError):
@@ -403,6 +417,67 @@ class TransactionService:
     ) -> list[TransactionDateSummary]:
         return self._repository.list_date_summaries()
 
+    def query_transactions(
+        self,
+        *,
+        transaction_type: str | None = None,
+        category: str | None = None,
+        account: str | None = None,
+        description: str | None = None,
+        text_query: str | None = None,
+        transaction_date: date | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> TransactionPage:
+        """Select a page through the persistence query boundary."""
+        dates = self.validate_date_query(
+            transaction_date=transaction_date,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        accepted_type = (
+            None
+            if transaction_type is None
+            else validate_transaction_type(transaction_type)
+        )
+        return self._repository.query(
+            TransactionQuery(
+                transaction_type=accepted_type,
+                category=category,
+                account=account,
+                description=description,
+                text_query=text_query,
+                transaction_date=dates.transaction_date,
+                start_date=dates.start_date,
+                end_date=dates.end_date,
+                limit=limit,
+                offset=offset,
+            )
+        )
+
+    def financial_summary(
+        self,
+        *,
+        transaction_date: date | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+    ) -> FinancialSummary:
+        """Aggregate a validated financial period in the repository."""
+        dates = self.validate_date_query(
+            transaction_date=transaction_date,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        return self._repository.summarize(
+            TransactionQuery(
+                transaction_date=dates.transaction_date,
+                start_date=dates.start_date,
+                end_date=dates.end_date,
+            )
+        )
+
     def update_transaction(
         self,
         display_id: str,
@@ -499,9 +574,11 @@ class TransactionService:
             category_id=accepted_category_id,
         )
         try:
-            return self._repository.replace(updated)
+            return self._repository.replace(existing, updated)
         except RepositoryTransactionNotFoundError as error:
             raise TransactionNotFoundError(display_id) from error
+        except RepositoryTransactionRecordChangedError as error:
+            raise TransactionRecordChangedError(display_id) from error
 
     def delete_transaction(
         self,

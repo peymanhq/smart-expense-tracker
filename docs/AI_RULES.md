@@ -57,7 +57,7 @@ Do not introduce financial calculations using `float`. Monetary values use
 
 - Do not modify real user data during testing.
 - Use temporary files or databases for tests.
-- Do not break the current JSON format without a migration plan.
+- Keep SQLite as the single authoritative persistence engine.
 - Do not delete or overwrite transaction data without explicit approval.
 - Do not commit passwords, tokens, API keys, database files, or private financial data.
 - Do not store Telegram Bot tokens or other secrets directly in source code.

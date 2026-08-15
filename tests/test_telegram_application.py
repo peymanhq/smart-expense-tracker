@@ -14,24 +14,19 @@ NOW = datetime(2026, 8, 4, 9, 30, tzinfo=timezone.utc)
 
 def build_telegram_service(
     workspace: Path,
-    backend: str,
 ) -> TelegramApplicationService:
     application = build_application(
         workspace,
-        backend=backend,
-        auto_migrate_json=False,
         today_provider=lambda: TODAY,
         utc_now_provider=lambda: NOW,
     )
     return TelegramApplicationService(application, lambda: TODAY)
 
 
-@pytest.mark.parametrize("backend", ["json", "sqlite"])
 def test_telegram_application_uses_backend_neutral_managed_workflows(
     tmp_path: Path,
-    backend: str,
 ) -> None:
-    service = build_telegram_service(tmp_path, backend)
+    service = build_telegram_service(tmp_path)
     cash = service.application.account_service.add_account("Cash").account
     inactive = service.application.account_service.add_account("Old").account
     salary = service.application.category_service.add_category(
@@ -72,12 +67,10 @@ def test_telegram_application_uses_backend_neutral_managed_workflows(
     assert transaction.transaction_date == TODAY
 
 
-@pytest.mark.parametrize("backend", ["json", "sqlite"])
 def test_telegram_application_calculates_all_time_and_today_summaries(
     tmp_path: Path,
-    backend: str,
 ) -> None:
-    service = build_telegram_service(tmp_path, backend)
+    service = build_telegram_service(tmp_path)
     account = service.application.account_service.add_account("Cash").account
     income = service.application.category_service.add_category(
         "Salary",
@@ -124,7 +117,7 @@ def test_telegram_application_calculates_all_time_and_today_summaries(
 def test_telegram_application_rejects_stale_managed_selections(
     tmp_path: Path,
 ) -> None:
-    service = build_telegram_service(tmp_path, "sqlite")
+    service = build_telegram_service(tmp_path)
     account = service.application.account_service.add_account("Cash").account
     category = service.application.category_service.add_category(
         "Food",
@@ -142,7 +135,7 @@ def test_telegram_application_rejects_stale_managed_selections(
 
 
 def test_telegram_application_validates_conversation_values(tmp_path: Path) -> None:
-    service = build_telegram_service(tmp_path, "sqlite")
+    service = build_telegram_service(tmp_path)
 
     assert service.validate_amount("10.25") == Decimal("10.25")
     assert service.validate_description("  Lunch  ") == "Lunch"

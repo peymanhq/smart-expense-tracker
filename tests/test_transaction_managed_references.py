@@ -4,9 +4,13 @@ import pytest
 
 from account import Account
 from category import Category
-from json_storage import StorageError
+from persistence_errors import StorageError
+from sqlite_account_repository import SQLiteAccountRepository
+from sqlite_category_repository import SQLiteCategoryRepository
+from sqlite_database import SQLiteDatabase
+from sqlite_schema import initialize_schema
+from sqlite_transaction_repository import SQLiteTransactionRepository
 from transaction import Transaction
-from transaction_repository import JsonTransactionRepository
 from transaction_service import (
     ManagedAccountInactiveError,
     ManagedAccountNotFoundError,
@@ -18,7 +22,6 @@ from transaction_service import (
     ManagedSnapshotUpdateError,
     TransactionService,
 )
-
 
 TODAY = date(2026, 7, 25)
 NOW = datetime(2026, 7, 25, 9, 15, tzinfo=timezone.utc)
@@ -86,12 +89,29 @@ CATEGORIES = {
 
 
 @pytest.fixture
-def repository(tmp_path) -> JsonTransactionRepository:
-    return JsonTransactionRepository(tmp_path / "data" / "transactions.json")
+def repository(tmp_path) -> SQLiteTransactionRepository:
+    database = SQLiteDatabase(tmp_path / "data" / "tracker.sqlite3")
+    initialize_schema(database)
+    account_repository = SQLiteAccountRepository(database)
+    for account in ACCOUNTS.values():
+        account_repository.create(account.id, account.name)
+    category_repository = SQLiteCategoryRepository(database)
+    for category in CATEGORIES.values():
+        category_repository.create(
+            category.id,
+            category.name,
+            category.transaction_type,
+        )
+    category_repository.create(
+        UNKNOWN_CATEGORY_ID,
+        "Unavailable Category",
+        "expense",
+    )
+    return SQLiteTransactionRepository(database)
 
 
 def make_service(
-    repository: JsonTransactionRepository,
+    repository: SQLiteTransactionRepository,
     *,
     account_lookup=ACCOUNTS.get,
     category_lookup=CATEGORIES.get,
@@ -120,7 +140,7 @@ def add_values(**overrides) -> dict:
 
 
 def persist_transaction(
-    repository: JsonTransactionRepository,
+    repository: SQLiteTransactionRepository,
     *,
     transaction_type: str = "expense",
     account_id: str | None = ACCOUNT_ID,
@@ -130,7 +150,7 @@ def persist_transaction(
 ) -> Transaction:
     return repository.create(
         Transaction(
-            id="managed-transaction",
+            id="123e4567-e89b-12d3-a456-426614174020",
             display_id=None,
             type=transaction_type,
             amount=10.0,

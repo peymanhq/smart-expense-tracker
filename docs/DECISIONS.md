@@ -104,7 +104,7 @@ Use JSON for Version 1.
 
 ## Status
 
-Accepted
+Superseded by ADR-033. Retained as 1.0 history.
 
 ## Context
 
@@ -118,7 +118,7 @@ Store transactions in JSON.
 
 Simple implementation.
 
-SQLite became primary in v1.5.0; JSON remains available for compatibility.
+SQLite became primary in v1.5.0 and the JSON runtime was retired by ADR-033.
 
 ---
 
@@ -1089,7 +1089,8 @@ Use `python-telegram-bot` 22.x with foreground long polling. Require an
 environment-provided bot token, one positive allowed Telegram user ID, and one
 existing explicit workspace. Use SQLite for the bot runtime and compose it
 through `build_application()`; retain backend neutrality by placing Telegram
-use cases above `ApplicationServices` and testing them with both repositories.
+use cases above `ApplicationServices` and testing them against repository
+protocols and SQLite integration.
 
 Use `telegram_handlers.py` only for authorization, messages, callbacks, and
 temporary conversation state. Use `telegram_application.py` for managed
@@ -1110,3 +1111,56 @@ every add state. Keep the English commands limited to `/start`, `/help`,
 - In-progress drafts are intentionally lost when the process restarts.
 - Update, delete, Excel delivery, notifications, webhooks, service managers,
   and multiple users remain separate future work.
+# ADR-033: Retire JSON compatibility and standardize on SQLite
+
+## Status
+
+Accepted 2026-08-15. This decision supersedes the runtime compatibility parts
+of ADR-029 and ADR-031; their historical migration record remains intact.
+
+## Decision
+
+SQLite is the sole authoritative persistence engine. Remove JSON repositories,
+storage helpers, automatic migration, backend-selection environment variables,
+and their dedicated tests. Preserve user-owned files on disk; the application
+never deletes legacy data automatically.
+
+## Consequences
+
+- One persistence contract, one integrity model, and fewer compatibility paths.
+- Service behavior remains covered through SQLite repositories.
+- Legacy JSON workspaces require an external/archive-version conversion before
+  use and cannot be selected at runtime.
+- Future schema evolution uses explicit SQLite migrations and backups.
+
+---
+
+# ADR-034: Model transfers separately and never infer legacy currency
+
+## Status
+
+Accepted as the Version 2 design direction on 2026-08-15.
+
+## Context
+
+Current amounts are exact but unitless. Guessing their currency from a machine
+locale, timezone, or user location can silently corrupt financial meaning.
+Representing a transfer as one expense plus one income also inflates cash-flow
+and category reports and makes atomic updates difficult.
+
+## Decision
+
+Introduce explicit Money currency semantics before currency-aware reporting.
+Migrate legacy values to ISO 4217 `XXX` until the user explicitly assigns a
+currency. Store opening balance on the Account boundary and introduce Transfer
+as its own aggregate with source debit and destination credit values. Do not
+include transfers in income or expense totals.
+
+## Consequences
+
+- Existing values keep their exact number without an invented unit.
+- Mixed-currency totals are rejected or grouped by currency.
+- Same- and cross-currency transfers remain atomic and auditable.
+- Schema v3/v4 and adapter work follow the gates in `V2_DESIGN.md`.
+
+---

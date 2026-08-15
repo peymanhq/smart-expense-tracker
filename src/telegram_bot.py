@@ -1,8 +1,8 @@
 """Foreground long-polling runtime for the Smart Expense Tracker bot."""
 
+import sys
 from collections.abc import Callable
 from datetime import date, datetime
-import sys
 from zoneinfo import ZoneInfo
 
 from telegram import Update
@@ -35,7 +35,6 @@ def create_bot_application(
     )
     application_services = build_application(
         config.workspace_root,
-        backend="sqlite",
         today_provider=configured_today,
     )
     telegram_service = TelegramApplicationService(

@@ -1,9 +1,9 @@
 """Transaction model."""
 
+import unicodedata
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
-import unicodedata
 
 from validators import validate_amount, validate_transaction_date, validate_utc_datetime
 

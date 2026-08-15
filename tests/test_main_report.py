@@ -5,8 +5,12 @@ import pytest
 
 import main
 from date_policy import validate_date_query
+from report import (
+    calculate_financial_summary,
+    generate_daily_summary,
+    generate_date_range_summary,
+)
 from transaction import Transaction
-
 
 TODAY = date(2026, 7, 25)
 
@@ -43,6 +47,24 @@ class ReportService:
     def list_transactions(self):
         self.list_calls += 1
         return list(self.transactions)
+
+    def financial_summary(
+        self,
+        *,
+        transaction_date=None,
+        start_date=None,
+        end_date=None,
+    ):
+        self.list_calls += 1
+        if transaction_date is not None:
+            return generate_daily_summary(self.transactions, transaction_date)
+        if start_date is not None or end_date is not None:
+            return generate_date_range_summary(
+                self.transactions,
+                start_date,
+                end_date,
+            )
+        return calculate_financial_summary(self.transactions)
 
 
 def set_inputs(monkeypatch, values):

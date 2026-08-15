@@ -4,11 +4,11 @@ from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+from telegram.ext import ConversationHandler
+
 from account import Account
 from category import Category
 from report import FinancialSummary
-from telegram.ext import ConversationHandler
-
 from telegram_handlers import (
     CONFIRM,
     DRAFT_KEY,
@@ -17,8 +17,8 @@ from telegram_handlers import (
     SELECT_ACCOUNT,
     SELECT_CATEGORY,
     SELECT_TYPE,
-    TelegramHandlers,
     UNAUTHORIZED_MESSAGE,
+    TelegramHandlers,
 )
 from transaction import Transaction
 

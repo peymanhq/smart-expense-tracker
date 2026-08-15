@@ -2,15 +2,12 @@
 
 from collections.abc import Callable
 from datetime import date
-import os
 from pathlib import Path
 from typing import Any, TypeVar
 
 from account import Account
 from application import (
-    ApplicationServices,
-    build_application,
-    build_json_application,
+    compose_application,
 )
 from category import Category
 from clock import TodayProvider, local_today
@@ -31,17 +28,12 @@ from formatter import format_transactions
 from persistence_errors import StorageError
 from report import (
     FinancialSummary,
-    calculate_financial_summary,
-    generate_daily_summary,
-    generate_date_range_summary,
 )
 from search import (
-    filter_transactions,
     find_transaction_by_display_id,
-    search_transactions,
 )
 from sqlite_database import SQLiteDatabase
-from sqlite_migration import json_workspace_exists
+from sqlite_schema import initialize_schema
 from transaction_service import (
     FutureTransactionDateError,
     TransactionActiveDateMismatchError,
@@ -52,12 +44,10 @@ from transaction_service import (
 from validators import validate_transaction_date, validate_transaction_type
 
 TRANSACTION_TODAY_PROVIDER: TodayProvider = local_today
-STORAGE_BACKEND_ENV = "SMART_EXPENSE_TRACKER_BACKEND"
-MIGRATE_JSON_ENV = "SMART_EXPENSE_TRACKER_MIGRATE_JSON"
-APPLICATION = build_json_application(
+APPLICATION = compose_application(
+    SQLiteDatabase.for_workspace(),
     today_provider=TRANSACTION_TODAY_PROVIDER,
 )
-ACTIVE_STORAGE_BACKEND = "json"
 ACCOUNT_SERVICE = APPLICATION.account_service
 CATEGORY_SERVICE = APPLICATION.category_service
 
@@ -86,100 +76,9 @@ TRANSACTION_CATEGORY_DISPLAY_LOOKUP = get_category_by_display_id
 EXCEL_IMPORT_SERVICE = APPLICATION.excel_import_service
 
 
-def _bind_application(
-    application: ApplicationServices,
-    backend: str,
-) -> None:
-    """Replace CLI bindings after an explicit runtime backend selection."""
-    global APPLICATION, ACTIVE_STORAGE_BACKEND
-    global ACCOUNT_SERVICE, CATEGORY_SERVICE, TRANSACTION_SERVICE
-    global EXCEL_IMPORT_SERVICE
-    global TRANSACTION_ACTIVE_ACCOUNT_LIST, TRANSACTION_ACCOUNT_DISPLAY_LOOKUP
-    global TRANSACTION_ACTIVE_CATEGORY_LIST, TRANSACTION_CATEGORY_DISPLAY_LOOKUP
-    global activate_account, add_account, deactivate_account
-    global get_account_by_display_id, get_account_by_id, list_accounts
-    global rename_account
-    global activate_category, add_category, deactivate_category
-    global get_category_by_display_id, get_category_by_id, list_categories
-    global rename_category
-
-    APPLICATION = application
-    ACTIVE_STORAGE_BACKEND = backend
-    ACCOUNT_SERVICE = application.account_service
-    CATEGORY_SERVICE = application.category_service
-    TRANSACTION_SERVICE = application.transaction_service
-    EXCEL_IMPORT_SERVICE = application.excel_import_service
-    activate_account = ACCOUNT_SERVICE.activate_account
-    add_account = ACCOUNT_SERVICE.add_account
-    deactivate_account = ACCOUNT_SERVICE.deactivate_account
-    get_account_by_display_id = application.account_display_lookup
-    get_account_by_id = application.account_lookup
-    list_accounts = application.account_list
-    rename_account = ACCOUNT_SERVICE.rename_account
-    activate_category = CATEGORY_SERVICE.activate_category
-    add_category = CATEGORY_SERVICE.add_category
-    deactivate_category = CATEGORY_SERVICE.deactivate_category
-    get_category_by_display_id = application.category_display_lookup
-    get_category_by_id = application.category_lookup
-    list_categories = application.category_list
-    rename_category = CATEGORY_SERVICE.rename_category
-    TRANSACTION_ACTIVE_ACCOUNT_LIST = application.active_account_list
-    TRANSACTION_ACCOUNT_DISPLAY_LOOKUP = get_account_by_display_id
-    TRANSACTION_ACTIVE_CATEGORY_LIST = application.active_category_list
-    TRANSACTION_CATEGORY_DISPLAY_LOOKUP = get_category_by_display_id
-
-
-def _environment_flag(name: str) -> bool:
-    value = os.environ.get(name, "0").strip().casefold()
-    if value in {"0", "false", "no", "off", ""}:
-        return False
-    if value in {"1", "true", "yes", "on"}:
-        return True
-    raise ValueError(f"{name} must be a true/false value.")
-
-
 def configure_storage_from_environment() -> None:
-    """Select SQLite by default without import-time disk access."""
-    requested_backend = os.environ.get(STORAGE_BACKEND_ENV, "sqlite")
-    normalized_backend = requested_backend.strip().casefold()
-    migrate_json = _environment_flag(MIGRATE_JSON_ENV)
-    if normalized_backend == ACTIVE_STORAGE_BACKEND and not migrate_json:
-        return
-    sqlite_path = SQLiteDatabase.for_workspace().path
-    database_existed = sqlite_path.exists()
-    compatibility_json_exists = json_workspace_exists()
-    automatic_migration = (
-        normalized_backend == "sqlite"
-        and not migrate_json
-        and not database_existed
-        and compatibility_json_exists
-    )
-    application = build_application(
-        backend=requested_backend,
-        migrate_json=migrate_json,
-        today_provider=TRANSACTION_TODAY_PROVIDER,
-    )
-    _bind_application(application, normalized_backend)
-    if automatic_migration:
-        print(
-            "Existing JSON data migrated automatically to SQLite; "
-            "source JSON files were preserved."
-        )
-    elif migrate_json:
-        print("Explicit JSON-to-SQLite migration completed.")
-    elif (
-        normalized_backend == "sqlite"
-        and database_existed
-        and compatibility_json_exists
-        and not application.account_list()
-        and not application.category_list()
-        and not application.transaction_service.list_transactions()
-    ):
-        print(
-            "SQLite database already exists and is empty; automatic JSON "
-            "migration was skipped. To import compatibility data explicitly, "
-            f"set {MIGRATE_JSON_ENV}=1 for one startup."
-        )
+    """Initialize and validate the single lazy-composed SQLite backend."""
+    initialize_schema(SQLiteDatabase.for_workspace())
 
 ManagedRecord = TypeVar("ManagedRecord", Account, Category)
 AccountList = Callable[[], list[Account]]
@@ -447,7 +346,7 @@ def handle_view_balance(
     service: TransactionService | None = None,
 ) -> None:
     service = _selected_transaction_service(service)
-    summary = calculate_financial_summary(service.list_transactions())
+    summary = service.financial_summary()
 
     print("\n--- Financial Summary ---")
     _print_financial_summary(summary)
@@ -473,10 +372,7 @@ def handle_daily_report(
 
     assert dates.transaction_date is not None
 
-    summary = generate_daily_summary(
-        service.list_transactions(),
-        dates.transaction_date,
-    )
+    summary = service.financial_summary(transaction_date=dates.transaction_date)
     print(
         f"\nFinancial report for "
         f"{dates.transaction_date.isoformat()}"
@@ -511,10 +407,9 @@ def handle_date_range_report(
     assert dates.start_date is not None
     assert dates.end_date is not None
 
-    summary = generate_date_range_summary(
-        service.list_transactions(),
-        dates.start_date,
-        dates.end_date,
+    summary = service.financial_summary(
+        start_date=dates.start_date,
+        end_date=dates.end_date,
     )
     print(
         f"\nFinancial report from {dates.start_date.isoformat()} "
@@ -761,8 +656,7 @@ def handle_filter_transactions(
     if not accepted or dates is None:
         return
 
-    results = filter_transactions(
-        service.list_transactions(),
+    results = service.query_transactions(
         transaction_type=transaction_type,
         category=category,
         account=account,
@@ -770,7 +664,7 @@ def handle_filter_transactions(
         transaction_date=dates.transaction_date,
         start_date=dates.start_date,
         end_date=dates.end_date,
-    )
+    ).items
 
     print("\n=== Filtered Transactions ===")
     print(format_transactions(results))
@@ -1107,13 +1001,12 @@ def handle_search(
     if not accepted or dates is None:
         return
 
-    results = search_transactions(
-        transactions=service.list_transactions(),
-        search_key=search_key,
+    results = service.query_transactions(
+        text_query=search_key.strip() or None,
         transaction_date=dates.transaction_date,
         start_date=dates.start_date,
         end_date=dates.end_date,
-    )
+    ).items
 
     if not results:
         print("No matching transactions found.")
@@ -1307,7 +1200,7 @@ def main() -> None:
     except (StorageError, ValueError) as error:
         print(f"Storage configuration error: {error}")
         return
-    print(f"Storage backend: {ACTIVE_STORAGE_BACKEND.upper()}")
+    print("Storage backend: SQLITE")
 
     while True:
         print("\n\n=== Smart Expense Tracker ===")

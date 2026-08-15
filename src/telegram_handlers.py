@@ -1,10 +1,10 @@
 """Telegram presentation handlers for the single-user bot MVP."""
 
+import warnings
 from collections.abc import MutableMapping
 from datetime import date
 from decimal import Decimal
 from typing import Any, cast
-import warnings
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (

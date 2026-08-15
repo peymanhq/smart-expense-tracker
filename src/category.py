@@ -1,7 +1,7 @@
 """Category model and name normalization helpers."""
 
-from dataclasses import dataclass
 import unicodedata
+from dataclasses import dataclass
 
 
 @dataclass

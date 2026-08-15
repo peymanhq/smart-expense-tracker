@@ -3,9 +3,8 @@
 from datetime import date, datetime
 from typing import cast
 
-from transaction import Transaction
 from id_generator import generator_transaction_id
-
+from transaction import Transaction
 from validators import (
     AmountInput,
     parse_utc_datetime,

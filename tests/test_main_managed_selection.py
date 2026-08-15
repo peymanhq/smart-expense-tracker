@@ -13,7 +13,6 @@ from id_generator import (
 )
 from transaction import Transaction
 
-
 ACTIVE_DATE = date(2026, 7, 20)
 ACCOUNT = Account(
     "123e4567-e89b-12d3-a456-426614174000",

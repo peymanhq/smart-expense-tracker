@@ -1,5 +1,6 @@
 """SQLite connection and transaction infrastructure."""
 
+import os
 import sqlite3
 import sys
 from collections.abc import Iterator
@@ -58,6 +59,7 @@ class SQLiteDatabase:
             return
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
+            os.chmod(self.path.parent, 0o700)
         except OSError as error:
             raise StorageError(
                 f"Could not create SQLite database directory for {self.path}."
@@ -72,7 +74,15 @@ class SQLiteDatabase:
                 isolation_level=None,
                 timeout=self.busy_timeout_ms / 1_000,
             )
+            if str(self.path) != ":memory:":
+                os.chmod(self.path, 0o600)
             connection.row_factory = sqlite3.Row
+            connection.create_function(
+                "CASEFOLD",
+                1,
+                lambda value: value.casefold() if isinstance(value, str) else value,
+                deterministic=True,
+            )
             connection.execute("PRAGMA foreign_keys = ON")
             connection.execute(
                 f"PRAGMA busy_timeout = {self.busy_timeout_ms}"

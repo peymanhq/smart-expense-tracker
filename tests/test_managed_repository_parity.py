@@ -13,7 +13,6 @@ from account_repository import (
     AccountRepositoryConflictError,
     AccountRepositoryNotFoundError,
     AccountRepositoryRecordChangedError,
-    JsonAccountRepository,
 )
 from account_service import AccountService
 from category import Category
@@ -22,7 +21,6 @@ from category_repository import (
     CategoryRepositoryConflictError,
     CategoryRepositoryNotFoundError,
     CategoryRepositoryRecordChangedError,
-    JsonCategoryRepository,
 )
 from category_service import CategoryService
 from persistence_errors import StorageError
@@ -36,46 +34,28 @@ def record_id(name: str) -> str:
     return str(uuid5(NAMESPACE_URL, name))
 
 
-@pytest.fixture(params=["json", "sqlite"])
+@pytest.fixture
 def account_backend(
-    request: pytest.FixtureRequest,
     tmp_path: Path,
 ) -> tuple[AccountRepository, Callable[[], AccountRepository]]:
-    if request.param == "json":
-        accounts_file = tmp_path / "json" / "accounts.json"
-        state_file = tmp_path / "json" / "accounts_state.json"
+    database = SQLiteDatabase(tmp_path / "sqlite" / "database.sqlite3")
+    initialize_schema(database)
 
-        def build() -> AccountRepository:
-            return JsonAccountRepository(accounts_file, state_file)
-
-    else:
-        database = SQLiteDatabase(tmp_path / "sqlite" / "database.sqlite3")
-        initialize_schema(database)
-
-        def build() -> AccountRepository:
-            return SQLiteAccountRepository(database)
+    def build() -> AccountRepository:
+        return SQLiteAccountRepository(database)
 
     return build(), build
 
 
-@pytest.fixture(params=["json", "sqlite"])
+@pytest.fixture
 def category_backend(
-    request: pytest.FixtureRequest,
     tmp_path: Path,
 ) -> tuple[CategoryRepository, Callable[[], CategoryRepository]]:
-    if request.param == "json":
-        categories_file = tmp_path / "json" / "categories.json"
-        state_file = tmp_path / "json" / "categories_state.json"
+    database = SQLiteDatabase(tmp_path / "sqlite" / "database.sqlite3")
+    initialize_schema(database)
 
-        def build() -> CategoryRepository:
-            return JsonCategoryRepository(categories_file, state_file)
-
-    else:
-        database = SQLiteDatabase(tmp_path / "sqlite" / "database.sqlite3")
-        initialize_schema(database)
-
-        def build() -> CategoryRepository:
-            return SQLiteCategoryRepository(database)
+    def build() -> CategoryRepository:
+        return SQLiteCategoryRepository(database)
 
     return build(), build
 

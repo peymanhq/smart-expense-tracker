@@ -1,9 +1,9 @@
 """Shared Excel workbook contracts and safe output helpers."""
 
-from collections.abc import Sequence
 import os
-from pathlib import Path
 import tempfile
+from collections.abc import Sequence
+from pathlib import Path
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -123,6 +123,7 @@ def save_workbook_atomic(
         ) as temporary_file:
             temporary_path = Path(temporary_file.name)
         workbook.save(temporary_path)
+        os.chmod(temporary_path, 0o600)
         os.replace(temporary_path, destination_path)
     except ExcelWorkbookError:
         raise

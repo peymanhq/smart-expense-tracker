@@ -5,7 +5,7 @@ import pytest
 import main
 from category import Category
 from category_service import CategoryOperationResult
-from json_storage import StorageError
+from persistence_errors import StorageError
 
 
 def test_main_menu_dispatch_opens_category_management(monkeypatch) -> None:
@@ -18,7 +18,6 @@ def test_main_menu_dispatch_opens_category_management(monkeypatch) -> None:
 
     monkeypatch.setattr(builtins, "input", lambda prompt: next(choices))
     monkeypatch.setitem(main.MENU_ACTIONS, "6", fake_category_menu)
-    monkeypatch.setenv("SMART_EXPENSE_TRACKER_BACKEND", "json")
 
     main.main()
 
