@@ -8,6 +8,10 @@ The format is based on **Keep a Changelog** and follows **Semantic Versioning**.
 
 ## [Unreleased]
 
+---
+
+## [1.6.0] - 2026-08-15
+
 ### Added
 
 - Single-user Telegram Bot MVP with foreground long polling

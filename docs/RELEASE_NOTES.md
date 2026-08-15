@@ -1,3 +1,41 @@
+# Smart Expense Tracker v1.6.0
+
+Released 2026-08-15.
+
+v1.6.0 adds a small, single-user Telegram interface without moving business
+rules, reporting, or persistence into Telegram handlers.
+
+## Telegram Bot MVP
+
+- Run the bot locally with foreground long polling and the installed
+  `expense-tracker-telegram` command.
+- Restrict every command and conversation step to one configured Telegram user.
+- Use `/start`, `/help`, `/add`, `/cancel`, `/balance`, and `/summary`.
+- Add today's income or expense through a confirmed multi-step conversation.
+- Select only active Accounts and active type-compatible Categories.
+- Require a valid exact Amount and non-empty Description before confirmation.
+- Receive all-time balance and today's summary in the configured IANA timezone.
+
+## Configuration and Architecture
+
+- Read the bot token, allowed user ID, workspace, and timezone from environment
+  variables without exposing the token in configuration representations.
+- Keep Telegram handlers responsible for input/output and orchestration only.
+- Reuse the existing application services, repository contracts, SQLite
+  composition, managed-reference rules, and pure report calculations.
+- Keep `main.py` unchanged and retain JSON as a compatibility backend outside
+  the Telegram runtime.
+
+## Release Verification
+
+The v1.6.0 release suite contains 648 passing tests with 91% total source
+coverage and successful static type checking across 40 source files. CI verifies
+Python 3.10 and 3.13, package builds, wheel installation, and all three installed
+commands. Live long-polling verification also confirmed persisted income and
+expense entry through Telegram.
+
+---
+
 # Smart Expense Tracker v1.5.1
 
 Released 2026-08-03.

@@ -2,13 +2,13 @@
 
 ## Executive Summary
 
-Smart Expense Tracker v1.5.1 is the current released version. SQLite is now
-the default storage backend, while JSON remains available through an explicit
-compatibility mode. The complete Account, Category, and Transaction repository
-set supports both storage backends through the same application-service layer.
-Automatic non-destructive JSON migration, validated SQLite backup, and offline
-restore are fully integrated without changing the application-service or Excel
-workflow contracts.
+Smart Expense Tracker v1.6.0 is the current released version. It adds a
+single-user Telegram adapter while SQLite remains the default storage backend
+and JSON remains available through an explicit compatibility mode. The complete
+Account, Category, and Transaction repository set supports both storage
+backends through the same application-service layer. Automatic non-destructive
+JSON migration, validated SQLite backup, and offline restore remain integrated
+without changing the application-service, Excel, or Telegram contracts.
 
 The transaction path now has explicit boundaries:
 
@@ -38,11 +38,10 @@ search, and daily/range reports. Transaction mutations are locked, creation
 allocates display IDs atomically, and JSON schema versions 1 through 3 remain
 compatible with legacy transaction files.
 
-The v1.5.1 release suite contains 617 passing tests. The current v1.6.0
-development suite contains 648 passing tests with a 90% coverage gate and
-source-wide static type checking. Persistence, migration, packaging, Excel, and
-Telegram tests use temporary workspaces or network-free test doubles and do not
-modify runtime data.
+The v1.6.0 release suite contains 648 passing tests with a 90% coverage gate
+and source-wide static type checking. Persistence, migration, packaging, Excel,
+and Telegram tests use temporary workspaces or network-free test doubles and do
+not modify runtime data.
 
 ## Current Architecture
 
@@ -224,7 +223,7 @@ these boundaries without owning workbook or persistence logic.
 
 ### Telegram Adapter
 
-The v1.6.0 work adds a separate single-user Telegram adapter. `telegram_bot.py`
+The v1.6.0 release adds a separate single-user Telegram adapter. `telegram_bot.py`
 composes the configured SQLite workspace and owns foreground long polling;
 `telegram_handlers.py` owns authorization and the guided conversation; and
 `telegram_application.py` reuses existing application services and pure report
@@ -243,10 +242,9 @@ Charts and PDF output remain deferred.
 
 Keep future work scoped and incremental:
 
-1. Complete live manual Telegram verification with a disposable bot token.
-2. Define backup rotation/retention and release rollback policy.
-3. Add rollback and corruption tests for each future SQLite schema upgrade.
-4. Add linting as a separately scoped tooling change.
+1. Define backup rotation/retention and release rollback policy.
+2. Add rollback and corruption tests for each future SQLite schema upgrade.
+3. Add linting as a separately scoped tooling change.
 
 Multiple currencies, transfers, dashboards, a GUI, and broader external
 interfaces remain roadmap items.

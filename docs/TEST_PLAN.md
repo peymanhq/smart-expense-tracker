@@ -285,7 +285,7 @@ coverage threshold and static type checker on Python 3.10 and 3.13.
 
 ## Telegram MVP Verification
 
-The current v1.6.0 development suite completes successfully:
+The v1.6.0 release suite completes successfully:
 
 ```text
 648 passed

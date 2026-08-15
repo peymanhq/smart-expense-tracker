@@ -8,10 +8,9 @@ compatibility mode.
 
 ## Version status
 
-**Smart Expense Tracker v1.5.1** is the current released version. It uses
-SQLite as the default storage backend, automatically migrates valid legacy JSON
-data on first startup when no SQLite database exists, and keeps JSON available
-through an explicit compatibility override.
+**Smart Expense Tracker v1.6.0** is the current released version. It adds a
+single-user Telegram Bot with foreground long polling while retaining SQLite as
+the default storage backend and JSON as an explicit compatibility option.
 
 ## Features
 
@@ -392,7 +391,7 @@ python -m mypy
 ```
 
 Tests use pytest temporary paths and do not write to application data files.
-The v1.5.1 release verification suite contains 617 passing tests and enforces
+The v1.6.0 release verification suite contains 648 passing tests and enforces
 at least 90% source coverage plus static type checking of all source modules.
 Compile the source and verify whitespace:
 
@@ -515,6 +514,13 @@ ID. If state is missing, it is recovered from the highest stored category ID.
   text in both current persistence schemas
 
 ## Release history
+
+### v1.6.0
+
+- Single-user Telegram Bot with foreground long polling.
+- Guided and confirmed entry for today's income and expense transactions.
+- All-time balance and today's summary through Telegram.
+- Authorized commands, environment-only secrets, and isolated adapter modules.
 
 ### v1.5.1
 
