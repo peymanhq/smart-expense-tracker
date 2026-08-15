@@ -10,7 +10,7 @@ The long-term objective is to build a maintainable, testable, and extensible fin
 
 ---
 
-## Current Architecture (v1.5.1)
+## Current Architecture (v1.6.0)
 
 The current application follows this structure:
 

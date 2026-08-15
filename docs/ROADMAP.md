@@ -218,7 +218,7 @@ Released 2026-08-03 (`1.5.1`).
 
 ## Status
 
-In development.
+Released 2026-08-15 (`1.6.0`).
 
 ## Implemented Scope
 

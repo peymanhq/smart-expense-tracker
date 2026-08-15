@@ -34,7 +34,7 @@ def test_project_metadata_declares_release_and_dependencies() -> None:
     project = load_pyproject()["project"]
 
     assert project["name"] == "smart-expense-tracker"
-    assert project["version"] == "1.5.1"
+    assert project["version"] == "1.6.0"
     assert project["requires-python"] == ">=3.10"
     assert project["license"] == "MIT"
     assert project["license-files"] == ["LICENSE"]
