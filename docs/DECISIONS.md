@@ -1061,3 +1061,52 @@ the Python 3.10 and 3.13 CI matrix.
 - Existing JSON reads remain non-mutating and upgrade on the next successful
   write; existing SQLite databases upgrade inside one transaction.
 - A type error, test failure, or coverage regression below 90% blocks CI.
+
+---
+
+# ADR-031
+
+## Title
+
+Introduce a single-user Telegram MVP through a separate application façade.
+
+## Status
+
+Accepted for v1.6.0.
+
+## Context
+
+Telegram transaction entry must reuse existing business rules and both
+repository contracts without accumulating messaging logic in the already-large
+`main.py`. The first release needs one practical local user rather than a
+multi-user authentication, tenancy, deployment, or background-job platform.
+Using the process working directory implicitly would risk opening an unintended
+empty database when the bot is launched from another directory.
+
+## Decision
+
+Use `python-telegram-bot` 22.x with foreground long polling. Require an
+environment-provided bot token, one positive allowed Telegram user ID, and one
+existing explicit workspace. Use SQLite for the bot runtime and compose it
+through `build_application()`; retain backend neutrality by placing Telegram
+use cases above `ApplicationServices` and testing them with both repositories.
+
+Use `telegram_handlers.py` only for authorization, messages, callbacks, and
+temporary conversation state. Use `telegram_application.py` for managed
+selection, transaction creation, and reports. Keep startup and polling in
+`telegram_bot.py`, and do not modify `main.py`.
+
+Use an explicit IANA timezone, defaulting to `Asia/Baghdad`, to determine
+today. Require confirmation before persistence and make `/cancel` available in
+every add state. Keep the English commands limited to `/start`, `/help`,
+`/add`, `/cancel`, `/balance`, and `/summary`.
+
+## Consequences
+
+- Telegram and CLI can share one SQLite workspace without duplicating SQL,
+  validation, ID allocation, managed-reference, or report logic.
+- Unauthorized updates are rejected before any application query or mutation.
+- Importing Telegram modules has no polling or filesystem side effects.
+- In-progress drafts are intentionally lost when the process restarts.
+- Update, delete, Excel delivery, notifications, webhooks, service managers,
+  and multiple users remain separate future work.

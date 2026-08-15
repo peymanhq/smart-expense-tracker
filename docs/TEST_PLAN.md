@@ -283,6 +283,42 @@ coverage threshold and static type checker on Python 3.10 and 3.13.
 
 # Manual and Release Verification
 
+## Telegram MVP Verification
+
+The current v1.6.0 development suite completes successfully:
+
+```text
+648 passed
+91% total source coverage (90% required)
+Success: no issues found in 40 source files
+```
+
+Automated coverage verifies required and invalid environment configuration,
+token redaction from configuration representation, explicit workspace and IANA
+timezone handling, import safety, runtime wiring, and long-polling startup.
+
+Application tests run the Telegram use cases through both JSON and SQLite
+composition. They cover active managed selections, category/type filtering,
+exact amount and required-description validation, managed UUID persistence,
+all-time balance, today's summary, and stale inactive selections.
+
+Handler tests use no Telegram network. They cover authorization before service
+access, informational and report commands, the complete add conversation,
+invalid value retry, preview-before-mutation, confirmation, cancellation,
+missing managed choices, and registration of every conversation state.
+
+Manual verification for a disposable Telegram bot and workspace requires:
+
+1. Start `expense-tracker-telegram` with all required environment variables.
+2. Verify an unauthorized user cannot trigger any application operation.
+3. Exercise `/start`, `/help`, and `/cancel` outside a conversation.
+4. Add one income and one expense through confirmation.
+5. Cancel separately at each add stage and verify no record is stored.
+6. Retry invalid Amount and empty Description input.
+7. Verify `/balance` and `/summary` against the CLI in the same workspace.
+8. Restart the bot, confirm stored records remain, and stop it with `Ctrl+C`.
+9. Confirm the bot token never appears in output, logs, or tracked files.
+
 The Date-based Transaction Management verification also confirms:
 
 1. Python source and tests compile successfully.
@@ -314,9 +350,8 @@ The Date-based Transaction Management verification also confirms:
 
 # Future Testing
 
-Linting remains planned. Future interfaces such as a GUI or Telegram bot will
-require end-to-end tests. PDF, charts, and other integration-specific tests
-remain future work.
+Linting remains planned. Live Telegram API testing, PDF, charts, and other
+integration-specific tests remain future work.
 Excel export coverage is included in v1.2.0; packaging and CI coverage is
 included in v1.3.0; Excel import and template coverage is included in v1.4.0.
 

@@ -71,9 +71,10 @@ jobs:
           wheel_venv="$RUNNER_TEMP/wheel-venv"
           python -m venv "$wheel_venv"
           "$wheel_venv/bin/python" -m pip install dist/*.whl
-          "$wheel_venv/bin/python" -c "import main; assert callable(main.main)"
+          "$wheel_venv/bin/python" -c "import main, telegram_bot; assert callable(main.main); assert callable(telegram_bot.main)"
           test -x "$wheel_venv/bin/expense-tracker"
           test -x "$wheel_venv/bin/expense-tracker-storage"
+          test -x "$wheel_venv/bin/expense-tracker-telegram"
           "$wheel_venv/bin/expense-tracker-storage" --help
           smoke_dir="$(mktemp -d)"
           cd "$smoke_dir"

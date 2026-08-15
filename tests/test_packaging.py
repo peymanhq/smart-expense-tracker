@@ -2,9 +2,9 @@
 
 import importlib
 import os
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 try:
     import tomllib
@@ -15,6 +15,7 @@ import account_storage
 import category_storage
 import main
 import storage
+import telegram_bot
 from application import build_json_application
 from sqlite_database import SQLiteDatabase
 from sqlite_schema import initialize_schema
@@ -37,7 +38,10 @@ def test_project_metadata_declares_release_and_dependencies() -> None:
     assert project["requires-python"] == ">=3.10"
     assert project["license"] == "MIT"
     assert project["license-files"] == ["LICENSE"]
-    assert project["dependencies"] == ["openpyxl>=3.1,<4.0"]
+    assert project["dependencies"] == [
+        "openpyxl>=3.1,<4.0",
+        "python-telegram-bot>=22.8,<23.0",
+    ]
     assert project["optional-dependencies"]["dev"] == [
         "build>=1.2,<2.0",
         "mypy>=1.11,<2.0",
@@ -66,6 +70,16 @@ def test_storage_console_script_points_to_maintenance_callable() -> None:
 
     entry_callable = getattr(importlib.import_module(module_name), attribute_name)
 
+    assert callable(entry_callable)
+
+
+def test_telegram_console_script_points_to_bot_callable() -> None:
+    target = load_pyproject()["project"]["scripts"]["expense-tracker-telegram"]
+    module_name, attribute_name = target.split(":", maxsplit=1)
+
+    entry_callable = getattr(importlib.import_module(module_name), attribute_name)
+
+    assert entry_callable is telegram_bot.main
     assert callable(entry_callable)
 
 
@@ -98,6 +112,27 @@ def test_importing_entry_module_does_not_start_cli(tmp_path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert result.stdout == ""
+    assert not (tmp_path / "data").exists()
+
+
+def test_importing_telegram_entry_does_not_start_polling_or_create_data(
+    tmp_path,
+) -> None:
+    result = subprocess.run(
+        [sys.executable, "-c", "import telegram_bot"],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "PYTHONPATH": str(PROJECT_ROOT / "src"),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == ""
+    assert result.stderr == ""
     assert not (tmp_path / "data").exists()
 
 
@@ -246,6 +281,13 @@ def test_ci_whitespace_check_handles_unreachable_push_base() -> None:
     assert 'git cat-file -e "$EVENT_BEFORE^{commit}"' in workflow
     assert "git diff-tree --check --root -r HEAD" in workflow
     assert 'git diff --check "$EVENT_BEFORE..HEAD"' in workflow
+
+
+def test_ci_smoke_checks_installed_telegram_entry_point() -> None:
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+
+    assert "import main, telegram_bot" in workflow
+    assert 'test -x "$wheel_venv/bin/expense-tracker-telegram"' in workflow
 
 
 def test_default_runtime_paths_use_one_current_workspace(

@@ -214,16 +214,27 @@ Released 2026-08-03 (`1.5.1`).
 - A 90% minimum source-coverage gate in CI
 - MIT package licensing metadata
 
-## Next Planned Version
+# Smart Expense Tracker v1.6.0
 
-v1.6.0
+## Status
 
-Primary focus:
+In development.
 
-- Telegram Bot MVP
-- Register income and expense from Telegram
-- Financial summary through Telegram
-- Excel export from Telegram
+## Implemented Scope
+
+- Single-user foreground Telegram Bot using `python-telegram-bot` long polling
+- Environment-only bot token, allowed-user, workspace, and timezone configuration
+- Authorized `/start`, `/help`, `/add`, `/cancel`, `/balance`, and `/summary`
+- Confirmed multi-step entry for today's managed income and expense transactions
+- Active Account selection and active type-compatible Category selection
+- All-time balance and configured-timezone daily summary
+- Shared application-service and repository contracts across CLI and Telegram
+
+## Deferred from the MVP
+
+- Transaction update and deletion
+- Excel export through Telegram
+- Notifications, webhooks, background services, and multiple users
 
 ---
 
@@ -302,10 +313,9 @@ Telegram integration.
 ## Planned Work
 
 - Telegram Bot
-- Transaction entry from Telegram
 - Notifications
 - Quick balance lookup
-- Expense logging through chat
+- Transaction update, deletion, and Excel delivery through Telegram
 
 Telegram should reuse the same validation and application services as the CLI.
 
