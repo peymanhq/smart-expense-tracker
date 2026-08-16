@@ -20,6 +20,8 @@ aggregate threshold.
 
 - Domain validation: amounts, dates, text, UUIDs, managed-reference rules
 - Services: Account, Category, Transaction, Excel import, Telegram facade
+- Reporting: all-time/date periods and Category UUID continuity across rename
+  and deactivation
 - Repository contracts: identity, ordering, uniqueness, stale writes, rollback
 - SQLite infrastructure: schema lifecycle, migration, constraints, locks,
   malformed rows, connection cleanup, and transaction rollback

@@ -33,7 +33,7 @@ in `data/smart_expense_tracker.sqlite3`; generated workbooks default to
 - Stable internal UUIDs and user-facing monotonic display IDs
 - Exact `Decimal` amounts and timezone-aware UTC metadata
 - Exact-date, range, text, Account, Category, and type filtering
-- All-time, daily, and range summaries
+- All-time, daily, range, and UUID-stable Category reports
 - Validated atomic Excel import, export, and template generation
 - Validated SQLite backup and explicitly confirmed offline restore
 - Authorized single-user Telegram add, balance, and daily-summary workflows

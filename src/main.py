@@ -197,6 +197,8 @@ def _selected_transaction_service(
 
 def _prompt_date_filter(
     service: TransactionService,
+    *,
+    operation: str = "Search",
 ) -> tuple[bool, ValidatedDateQuery | None]:
     """Prompt for an independent search/report date without changing workspace."""
     print("\nDate filter:")
@@ -207,7 +209,7 @@ def _prompt_date_filter(
     choice = input("Choose date filter: ").strip()
 
     if choice == "0" or not choice:
-        print("Search cancelled.")
+        print(f"{operation} cancelled.")
         return False, None
     if choice == "1":
         return True, service.validate_date_query()
@@ -216,7 +218,7 @@ def _prompt_date_filter(
         if choice == "2":
             value = input("Enter transaction date (YYYY-MM-DD): ").strip()
             if not value:
-                print("Search cancelled.")
+                print(f"{operation} cancelled.")
                 return False, None
             transaction_date = validate_transaction_date(value)
             return True, service.validate_date_query(
@@ -226,11 +228,11 @@ def _prompt_date_filter(
         if choice == "3":
             start_value = input("Start date (YYYY-MM-DD): ").strip()
             if not start_value:
-                print("Search cancelled.")
+                print(f"{operation} cancelled.")
                 return False, None
             end_value = input("End date (YYYY-MM-DD): ").strip()
             if not end_value:
-                print("Search cancelled.")
+                print(f"{operation} cancelled.")
                 return False, None
             start_date = validate_transaction_date(start_value)
             end_date = validate_transaction_date(end_value)
@@ -418,6 +420,76 @@ def handle_date_range_report(
     _print_financial_summary(summary)
 
 
+def _category_report_period(dates: ValidatedDateQuery) -> str:
+    if dates.transaction_date is not None:
+        return dates.transaction_date.isoformat()
+    if dates.start_date is not None and dates.end_date is not None:
+        return f"{dates.start_date.isoformat()} to {dates.end_date.isoformat()}"
+    return "All time"
+
+
+def handle_category_report(
+    service: TransactionService | None = None,
+    *,
+    category_list: CategoryList | None = None,
+    category_display_lookup: CategoryDisplayLookup | None = None,
+) -> None:
+    """Display one managed Category's totals and contributing transactions."""
+    service = _selected_transaction_service(service)
+    category_list = list_categories if category_list is None else category_list
+    category_display_lookup = (
+        get_category_by_display_id
+        if category_display_lookup is None
+        else category_display_lookup
+    )
+    try:
+        categories = category_list()
+    except StorageError as error:
+        _print_transaction_error(error)
+        return
+    if not categories:
+        print("No categories are available for reporting.")
+        return
+
+    selected = _select_by_display_id(
+        categories,
+        heading="Available categories:",
+        prompt="Select category ID: ",
+        invalid_message="Invalid or unavailable category display ID.",
+        display_lookup=category_display_lookup,
+    )
+    assert selected is not None
+
+    accepted, dates = _prompt_date_filter(service, operation="Report")
+    if not accepted or dates is None:
+        return
+    try:
+        report = service.detailed_financial_report(
+            category_id=selected.id,
+            transaction_date=dates.transaction_date,
+            start_date=dates.start_date,
+            end_date=dates.end_date,
+        )
+    except (StorageError, ValueError) as error:
+        _print_transaction_error(error)
+        return
+
+    status = "Active" if selected.is_active else "Inactive"
+    total = (
+        report.summary.total_income
+        if selected.transaction_type == "income"
+        else report.summary.total_expense
+    )
+    print(f"\n=== Category Report: {selected.name} ({selected.display_id}) ===")
+    print(f"Type: {selected.transaction_type.title()}")
+    print(f"Status: {status}")
+    print(f"Period: {_category_report_period(dates)}")
+    print(f"Total {selected.transaction_type.title()}: {total:.2f}")
+    print(f"Transaction Count: {report.summary.transaction_count}")
+    print("\nTransactions:")
+    print(format_transactions(list(report.transactions)))
+
+
 def financial_report_menu(
     service: TransactionService | None = None,
 ) -> None:
@@ -426,6 +498,7 @@ def financial_report_menu(
     print("1. All-time report")
     print("2. Daily report")
     print("3. Date-range report")
+    print("4. Category report")
     print("0. Back")
     choice = input("Choose report: ").strip()
     if choice == "1":
@@ -434,6 +507,8 @@ def financial_report_menu(
         handle_daily_report(service)
     elif choice == "3":
         handle_date_range_report(service)
+    elif choice == "4":
+        handle_category_report(service)
     elif choice != "0":
         print("Invalid report choice.")
 
