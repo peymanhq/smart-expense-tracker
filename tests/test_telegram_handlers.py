@@ -8,19 +8,30 @@ from telegram.ext import ConversationHandler
 
 from account import Account
 from category import Category
+from persistence_errors import StorageError
 from report import FinancialSummary
+from telegram_application import TelegramCategoryReport
 from telegram_handlers import (
+    CATEGORY_REPORT_DRAFT_KEY,
     CONFIRM,
     DRAFT_KEY,
     ENTER_AMOUNT,
     ENTER_DESCRIPTION,
+    MAX_CATEGORY_REPORT_TRANSACTIONS,
+    REPORT_ENTER_END,
+    REPORT_ENTER_START,
+    REPORT_SELECT_CATEGORY,
+    REPORT_SELECT_PERIOD,
     SELECT_ACCOUNT,
     SELECT_CATEGORY,
     SELECT_TYPE,
+    TELEGRAM_MESSAGE_LIMIT,
     UNAUTHORIZED_MESSAGE,
     TelegramHandlers,
+    _category_report_text,
 )
 from transaction import Transaction
+from transaction_service import DetailedFinancialReport
 
 ALLOWED_USER_ID = 123456789
 ACCOUNT_ID = "00000000-0000-4000-8000-000000000001"
@@ -76,6 +87,9 @@ def make_service() -> Mock:
     service.list_active_categories.return_value = [
         Category(CATEGORY_ID, "C-0001", "Food", "expense")
     ]
+    service.list_report_categories.return_value = [
+        Category(CATEGORY_ID, "C-0001", "Food", "expense")
+    ]
     service.require_active_account.return_value = Account(
         ACCOUNT_ID,
         "A-0001",
@@ -87,6 +101,13 @@ def make_service() -> Mock:
         "Food",
         "expense",
     )
+    service.require_report_category.return_value = Category(
+        CATEGORY_ID,
+        "C-0001",
+        "Food",
+        "expense",
+    )
+    service.validate_report_date.side_effect = date.fromisoformat
     service.validate_amount.side_effect = lambda value: Decimal(value)
     service.validate_description.side_effect = lambda value: value.strip()
     service.today.return_value = TODAY
@@ -113,6 +134,18 @@ def make_service() -> Mock:
         transaction_date=TODAY,
         account_id=ACCOUNT_ID,
         category_id=CATEGORY_ID,
+    )
+    service.category_report.return_value = TelegramCategoryReport(
+        category=Category(CATEGORY_ID, "C-0001", "Food", "expense"),
+        financial=DetailedFinancialReport(
+            summary=FinancialSummary(
+                Decimal("0"),
+                Decimal("25"),
+                Decimal("-25"),
+                1,
+            ),
+            transactions=(service.add_transaction.return_value,),
+        ),
     )
     return service
 
@@ -232,6 +265,196 @@ def test_cancel_command_and_button_clear_draft_without_persistence() -> None:
     service.add_transaction.assert_not_called()
 
 
+def test_category_report_range_conversation_validates_and_loads_report() -> None:
+    service = make_service()
+    handlers = TelegramHandlers(service, allowed_user_id=ALLOWED_USER_ID)
+    context = make_context()
+
+    update, message = make_message_update("/category")
+    assert run(handlers.category_report(update, context)) == REPORT_SELECT_CATEGORY
+    markup = message.reply_text.await_args.kwargs["reply_markup"]
+    assert markup.inline_keyboard[0][0].callback_data == (
+        f"report-category:{CATEGORY_ID}"
+    )
+
+    update, query = make_callback_update(f"report-category:{CATEGORY_ID}")
+    assert run(handlers.choose_report_category(update, context)) == REPORT_SELECT_PERIOD
+    assert context.user_data[CATEGORY_REPORT_DRAFT_KEY]["category_id"] == CATEGORY_ID
+    assert "Choose the report period" in query.edit_message_text.await_args.args[0]
+
+    update, _ = make_callback_update("report-period:range")
+    assert run(handlers.choose_report_period(update, context)) == REPORT_ENTER_START
+
+    update, message = make_message_update("not-a-date")
+    assert run(handlers.receive_report_start_date(update, context)) == REPORT_ENTER_START
+    assert "Invalid start date" in message.reply_text.await_args.args[0]
+
+    update, _ = make_message_update("2026-08-03")
+    assert run(handlers.receive_report_start_date(update, context)) == REPORT_ENTER_END
+
+    update, message = make_message_update("2026-08-04")
+    assert run(handlers.receive_report_end_date(update, context)) == (
+        ConversationHandler.END
+    )
+    service.category_report.assert_called_once_with(
+        CATEGORY_ID,
+        transaction_date=None,
+        start_date=date(2026, 8, 3),
+        end_date=TODAY,
+    )
+    report_text = message.reply_text.await_args.args[0]
+    assert "Category Report" in report_text
+    assert "Period: 2026-08-03 to 2026-08-04" in report_text
+    assert "Total Expense: 25.00" in report_text
+    assert "T-0001 | 2026-08-04 | 25.00 | Lunch" in report_text
+    assert CATEGORY_REPORT_DRAFT_KEY not in context.user_data
+
+
+def test_category_report_today_supports_inactive_category() -> None:
+    service = make_service()
+    inactive = Category(
+        CATEGORY_ID,
+        "C-0001",
+        "Dining",
+        "expense",
+        is_active=False,
+    )
+    service.list_report_categories.return_value = [inactive]
+    service.require_report_category.return_value = inactive
+    service.category_report.return_value = TelegramCategoryReport(
+        inactive,
+        service.category_report.return_value.financial,
+    )
+    handlers = TelegramHandlers(service, allowed_user_id=ALLOWED_USER_ID)
+    context = make_context()
+
+    update, message = make_message_update("/category")
+    assert run(handlers.category_report(update, context)) == REPORT_SELECT_CATEGORY
+    assert "inactive" in message.reply_text.await_args.kwargs[
+        "reply_markup"
+    ].inline_keyboard[0][0].text
+
+    update, _ = make_callback_update(f"report-category:{CATEGORY_ID}")
+    assert run(handlers.choose_report_category(update, context)) == REPORT_SELECT_PERIOD
+    update, query = make_callback_update("report-period:today")
+    assert run(handlers.choose_report_period(update, context)) == ConversationHandler.END
+
+    service.category_report.assert_called_once_with(
+        CATEGORY_ID,
+        transaction_date=TODAY,
+        start_date=None,
+        end_date=None,
+    )
+    assert "Status: Inactive" in query.edit_message_text.await_args.args[0]
+
+
+def test_category_report_all_time_and_stale_selection_failures() -> None:
+    service = make_service()
+    handlers = TelegramHandlers(service, allowed_user_id=ALLOWED_USER_ID)
+    context = make_context()
+    context.user_data[CATEGORY_REPORT_DRAFT_KEY] = {"category_id": CATEGORY_ID}
+
+    update, query = make_callback_update("report-period:all")
+    assert run(handlers.choose_report_period(update, context)) == ConversationHandler.END
+    service.category_report.assert_called_once_with(
+        CATEGORY_ID,
+        transaction_date=None,
+        start_date=None,
+        end_date=None,
+    )
+    assert "Period: All time" in query.edit_message_text.await_args.args[0]
+
+    for error, expected in (
+        (ValueError("Selected category is no longer available."), "no longer"),
+        (StorageError("private detail"), "Unable to load"),
+    ):
+        failing_service = make_service()
+        failing_service.require_report_category.side_effect = error
+        failing_handlers = TelegramHandlers(
+            failing_service,
+            allowed_user_id=ALLOWED_USER_ID,
+        )
+        update, query = make_callback_update(f"report-category:{CATEGORY_ID}")
+        assert run(failing_handlers.choose_report_category(update, make_context())) == (
+            ConversationHandler.END
+        )
+        response = query.edit_message_text.await_args.args[0]
+        assert expected in response
+        assert "private detail" not in response
+
+
+def test_category_report_handles_authorization_empty_data_and_storage_errors() -> None:
+    service = make_service()
+    handlers = TelegramHandlers(service, allowed_user_id=ALLOWED_USER_ID)
+
+    update, message = make_message_update("/category", user_id=999)
+    assert run(handlers.category_report(update, make_context())) == ConversationHandler.END
+    assert message.reply_text.await_args.args[0] == UNAUTHORIZED_MESSAGE
+    service.list_report_categories.assert_not_called()
+
+    service.list_report_categories.return_value = []
+    update, message = make_message_update("/category")
+    assert run(handlers.category_report(update, make_context())) == ConversationHandler.END
+    assert "No categories" in message.reply_text.await_args.args[0]
+
+    service.list_report_categories.side_effect = StorageError("offline")
+    update, message = make_message_update("/category")
+    assert run(handlers.category_report(update, make_context())) == ConversationHandler.END
+    assert "Unable to load categories" in message.reply_text.await_args.args[0]
+
+
+def test_category_report_range_keeps_validation_errors_but_hides_storage_details() -> None:
+    service = make_service()
+    handlers = TelegramHandlers(service, allowed_user_id=ALLOWED_USER_ID)
+    context = make_context()
+    context.user_data[CATEGORY_REPORT_DRAFT_KEY] = {
+        "category_id": CATEGORY_ID,
+        "start_date": TODAY,
+    }
+    service.category_report.side_effect = ValueError(
+        "Start date cannot be after end date."
+    )
+
+    update, message = make_message_update("2026-08-03")
+    assert run(handlers.receive_report_end_date(update, context)) == REPORT_ENTER_END
+    assert "Start date cannot be after end date" in message.reply_text.await_args.args[0]
+
+    service.category_report.side_effect = StorageError("private database detail")
+    update, message = make_message_update("2026-08-04")
+    assert run(handlers.receive_report_end_date(update, context)) == (
+        ConversationHandler.END
+    )
+    response = message.reply_text.await_args.args[0]
+    assert response == "Unable to load the Category report."
+    assert "private database detail" not in response
+    assert CATEGORY_REPORT_DRAFT_KEY not in context.user_data
+
+    update, message = make_message_update("2026-08-04")
+    assert run(handlers.receive_report_end_date(update, make_context())) == (
+        ConversationHandler.END
+    )
+    assert "draft is no longer available" in message.reply_text.await_args.args[0]
+
+
+def test_category_report_text_caps_transaction_details_and_message_size() -> None:
+    service = make_service()
+    transaction = service.add_transaction.return_value
+    transactions = tuple(transaction for _ in range(12))
+    report = TelegramCategoryReport(
+        service.require_report_category.return_value,
+        DetailedFinancialReport(
+            FinancialSummary(Decimal("0"), Decimal("300"), Decimal("-300"), 12),
+            transactions,
+        ),
+    )
+
+    text = _category_report_text(report, "All time")
+
+    assert text.count("T-0001 |") == MAX_CATEGORY_REPORT_TRANSACTIONS
+    assert "Showing 10 of 12 transactions." in text
+    assert len(text) <= TELEGRAM_MESSAGE_LIMIT
+
+
 def test_add_ends_cleanly_when_no_active_accounts_or_categories_exist() -> None:
     service = make_service()
     handlers = TelegramHandlers(service, allowed_user_id=ALLOWED_USER_ID)
@@ -264,7 +487,16 @@ def test_conversation_registers_cancel_fallback_for_every_state() -> None:
         ENTER_AMOUNT,
         ENTER_DESCRIPTION,
         CONFIRM,
+        REPORT_SELECT_CATEGORY,
+        REPORT_SELECT_PERIOD,
+        REPORT_ENTER_START,
+        REPORT_ENTER_END,
     }
+    assert {
+        command
+        for handler in conversation.entry_points
+        for command in getattr(handler, "commands", frozenset())
+    } == {"add", "category"}
     assert any(
         getattr(handler, "commands", frozenset()) == frozenset({"cancel"})
         for handler in conversation.fallbacks

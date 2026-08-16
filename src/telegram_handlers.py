@@ -19,20 +19,35 @@ from telegram.warnings import PTBUserWarning
 
 from persistence_errors import StorageError
 from report import FinancialSummary
-from telegram_application import TelegramApplicationService
+from telegram_application import TelegramApplicationService, TelegramCategoryReport
 from transaction_service import TransactionServiceError
 
-SELECT_TYPE, SELECT_ACCOUNT, SELECT_CATEGORY, ENTER_AMOUNT, ENTER_DESCRIPTION, CONFIRM = range(6)
+(
+    SELECT_TYPE,
+    SELECT_ACCOUNT,
+    SELECT_CATEGORY,
+    ENTER_AMOUNT,
+    ENTER_DESCRIPTION,
+    CONFIRM,
+    REPORT_SELECT_CATEGORY,
+    REPORT_SELECT_PERIOD,
+    REPORT_ENTER_START,
+    REPORT_ENTER_END,
+) = range(10)
 DRAFT_KEY = "telegram_transaction_draft"
+CATEGORY_REPORT_DRAFT_KEY = "telegram_category_report_draft"
 UNAUTHORIZED_MESSAGE = "You are not authorized to use this bot."
+MAX_CATEGORY_REPORT_TRANSACTIONS = 10
+TELEGRAM_MESSAGE_LIMIT = 4096
 
 HELP_TEXT = """Available commands:
 /start - Show the welcome message
 /help - Show this help
 /add - Add an income or expense transaction
-/cancel - Cancel the active add operation
+/cancel - Cancel the active operation
 /balance - Show the all-time financial balance
-/summary - Show today's financial summary"""
+/summary - Show today's financial summary
+/category - Show a Category report"""
 
 
 def _create_conversation_handler(**kwargs: Any) -> ConversationHandler:
@@ -54,6 +69,52 @@ def _summary_text(title: str, summary: FinancialSummary) -> str:
         f"Balance: {summary.balance:.2f}\n"
         f"Transaction Count: {summary.transaction_count}"
     )
+
+
+def _short_text(value: object, limit: int = 80) -> str:
+    text = str(value).replace("\n", " ").strip()
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _category_report_text(
+    report: TelegramCategoryReport,
+    period: str,
+) -> str:
+    category = report.category
+    financial = report.financial
+    summary = financial.summary
+    total = (
+        summary.total_income
+        if category.transaction_type == "income"
+        else summary.total_expense
+    )
+    status = "Active" if category.is_active else "Inactive"
+    lines = [
+        "Category Report",
+        f"Category: {_short_text(category.name)} ({category.display_id})",
+        f"Type: {category.transaction_type.title()}",
+        f"Status: {status}",
+        f"Period: {period}",
+        f"Total {category.transaction_type.title()}: {total:.2f}",
+        f"Transaction Count: {summary.transaction_count}",
+    ]
+    shown = financial.transactions[:MAX_CATEGORY_REPORT_TRANSACTIONS]
+    if shown:
+        lines.extend(("", "Recent transactions:"))
+        lines.extend(
+            f"{transaction.display_id} | "
+            f"{transaction.transaction_date.isoformat()} | "
+            f"{transaction.amount:.2f} | "
+            f"{_short_text(transaction.description)}"
+            for transaction in shown
+        )
+        if len(financial.transactions) > len(shown):
+            lines.append(
+                f"Showing {len(shown)} of {len(financial.transactions)} transactions."
+            )
+    else:
+        lines.extend(("", "No matching transactions found."))
+    return "\n".join(lines)[:TELEGRAM_MESSAGE_LIMIT]
 
 
 class TelegramHandlers:
@@ -115,6 +176,27 @@ class TelegramHandlers:
     def _clear_draft(cls, context: ContextTypes.DEFAULT_TYPE) -> None:
         cls._user_data(context).pop(DRAFT_KEY, None)
 
+    @classmethod
+    def _report_draft(
+        cls,
+        context: ContextTypes.DEFAULT_TYPE,
+    ) -> MutableMapping[str, object]:
+        user_data = cls._user_data(context)
+        draft = user_data.get(CATEGORY_REPORT_DRAFT_KEY)
+        if not isinstance(draft, MutableMapping):
+            draft = {}
+            user_data[CATEGORY_REPORT_DRAFT_KEY] = draft
+        return cast(MutableMapping[str, object], draft)
+
+    @classmethod
+    def _clear_report_draft(cls, context: ContextTypes.DEFAULT_TYPE) -> None:
+        cls._user_data(context).pop(CATEGORY_REPORT_DRAFT_KEY, None)
+
+    @classmethod
+    def _clear_all_drafts(cls, context: ContextTypes.DEFAULT_TYPE) -> None:
+        cls._clear_draft(context)
+        cls._clear_report_draft(context)
+
     async def start(
         self,
         update: Update,
@@ -171,6 +253,209 @@ class TelegramHandlers:
             ),
         )
 
+    async def category_report(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+    ) -> int:
+        if not await self._authorize(update):
+            return ConversationHandler.END
+        self._clear_all_drafts(context)
+        try:
+            categories = self._service.list_report_categories()
+        except StorageError:
+            await self._reply(update, "Unable to load categories for reporting.")
+            return ConversationHandler.END
+        if not categories:
+            await self._reply(update, "No categories are available for reporting.")
+            return ConversationHandler.END
+        keyboard = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        (
+                            f"{category.name} ({category.transaction_type.title()}"
+                            f"{'' if category.is_active else ', inactive'})"
+                        ),
+                        callback_data=f"report-category:{category.id}",
+                    )
+                ]
+                for category in categories
+            ]
+        )
+        await self._reply(
+            update,
+            "Choose a category for the report:",
+            reply_markup=keyboard,
+        )
+        return REPORT_SELECT_CATEGORY
+
+    async def choose_report_category(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+    ) -> int:
+        if not await self._authorize(update):
+            return ConversationHandler.END
+        query = update.callback_query
+        if query is None:
+            return REPORT_SELECT_CATEGORY
+        await query.answer()
+        category_id = (query.data or "").partition(":")[2]
+        try:
+            category = self._service.require_report_category(category_id)
+        except StorageError:
+            self._clear_report_draft(context)
+            await query.edit_message_text("Unable to load the selected category.")
+            return ConversationHandler.END
+        except ValueError as error:
+            self._clear_report_draft(context)
+            await query.edit_message_text(str(error))
+            return ConversationHandler.END
+        draft = self._report_draft(context)
+        draft["category_id"] = category.id
+        keyboard = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "Today",
+                        callback_data="report-period:today",
+                    ),
+                    InlineKeyboardButton(
+                        "All time",
+                        callback_data="report-period:all",
+                    ),
+                ],
+                [
+                    InlineKeyboardButton(
+                        "Date range",
+                        callback_data="report-period:range",
+                    )
+                ],
+            ]
+        )
+        await query.edit_message_text(
+            f"Category: {category.name}\nChoose the report period:",
+            reply_markup=keyboard,
+        )
+        return REPORT_SELECT_PERIOD
+
+    def _load_category_report(
+        self,
+        context: ContextTypes.DEFAULT_TYPE,
+        *,
+        period: str,
+        transaction_date: date | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+    ) -> str:
+        draft = self._report_draft(context)
+        category_id = cast(str, draft["category_id"])
+        report = self._service.category_report(
+            category_id,
+            transaction_date=transaction_date,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        return _category_report_text(report, period)
+
+    async def choose_report_period(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+    ) -> int:
+        if not await self._authorize(update):
+            return ConversationHandler.END
+        query = update.callback_query
+        if query is None:
+            return REPORT_SELECT_PERIOD
+        await query.answer()
+        period = (query.data or "").partition(":")[2]
+        if period == "range":
+            await query.edit_message_text("Enter the start date (YYYY-MM-DD):")
+            return REPORT_ENTER_START
+        try:
+            if period == "today":
+                report_date = self._service.today()
+                text = self._load_category_report(
+                    context,
+                    period=report_date.isoformat(),
+                    transaction_date=report_date,
+                )
+            elif period == "all":
+                text = self._load_category_report(context, period="All time")
+            else:
+                raise ValueError("Invalid report period.")
+        except (KeyError, StorageError, ValueError):
+            self._clear_report_draft(context)
+            await query.edit_message_text("Unable to load the Category report.")
+            return ConversationHandler.END
+        self._clear_report_draft(context)
+        await query.edit_message_text(text)
+        return ConversationHandler.END
+
+    async def receive_report_start_date(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+    ) -> int:
+        if not await self._authorize(update):
+            return ConversationHandler.END
+        message = update.effective_message
+        value = "" if message is None or message.text is None else message.text
+        try:
+            start_date = self._service.validate_report_date(value.strip())
+        except ValueError as error:
+            await self._reply(
+                update,
+                f"Invalid start date: {error}\nEnter the start date (YYYY-MM-DD):",
+            )
+            return REPORT_ENTER_START
+        self._report_draft(context)["start_date"] = start_date
+        await self._reply(update, "Enter the end date (YYYY-MM-DD):")
+        return REPORT_ENTER_END
+
+    async def receive_report_end_date(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+    ) -> int:
+        if not await self._authorize(update):
+            return ConversationHandler.END
+        message = update.effective_message
+        value = "" if message is None or message.text is None else message.text
+        try:
+            end_date = self._service.validate_report_date(value.strip())
+            start_date = cast(date, self._report_draft(context)["start_date"])
+            text = self._load_category_report(
+                context,
+                period=f"{start_date.isoformat()} to {end_date.isoformat()}",
+                start_date=start_date,
+                end_date=end_date,
+            )
+        except StorageError:
+            self._clear_report_draft(context)
+            await self._reply(update, "Unable to load the Category report.")
+            return ConversationHandler.END
+        except KeyError:
+            self._clear_report_draft(context)
+            await self._reply(
+                update,
+                "The Category report draft is no longer available. "
+                "Start again with /category.",
+            )
+            return ConversationHandler.END
+        except ValueError as error:
+            await self._reply(
+                update,
+                f"Invalid end date or range: {error}\n"
+                "Enter the end date (YYYY-MM-DD):",
+            )
+            return REPORT_ENTER_END
+        self._clear_report_draft(context)
+        await self._reply(update, text)
+        return ConversationHandler.END
+
     async def add(
         self,
         update: Update,
@@ -178,7 +463,7 @@ class TelegramHandlers:
     ) -> int:
         if not await self._authorize(update):
             return ConversationHandler.END
-        self._clear_draft(context)
+        self._clear_all_drafts(context)
         keyboard = InlineKeyboardMarkup(
             [[
                 InlineKeyboardButton("Income", callback_data="type:income"),
@@ -390,13 +675,16 @@ class TelegramHandlers:
     ) -> int:
         if not await self._authorize(update):
             return ConversationHandler.END
-        had_draft = DRAFT_KEY in self._user_data(context)
-        self._clear_draft(context)
-        message = (
-            "Operation cancelled. No transaction was saved."
-            if had_draft
-            else "There is no active operation to cancel."
-        )
+        user_data = self._user_data(context)
+        had_transaction_draft = DRAFT_KEY in user_data
+        had_report_draft = CATEGORY_REPORT_DRAFT_KEY in user_data
+        self._clear_all_drafts(context)
+        if had_transaction_draft:
+            message = "Operation cancelled. No transaction was saved."
+        elif had_report_draft:
+            message = "Category report cancelled."
+        else:
+            message = "There is no active operation to cancel."
         await self._reply(update, message)
         return ConversationHandler.END
 
@@ -434,7 +722,10 @@ class TelegramHandlers:
             CommandHandler("summary", self.summary),
         ]
         return _create_conversation_handler(
-            entry_points=[CommandHandler("add", self.add)],
+            entry_points=[
+                CommandHandler("add", self.add),
+                CommandHandler("category", self.category_report),
+            ],
             states={
                 SELECT_TYPE: [
                     CallbackQueryHandler(self.choose_type, pattern=r"^type:(income|expense)$"),
@@ -456,6 +747,26 @@ class TelegramHandlers:
                     CallbackQueryHandler(self.confirm, pattern=r"^confirm:add$"),
                     CallbackQueryHandler(self.cancel_button, pattern=r"^cancel:add$"),
                     MessageHandler(text_input, self.use_buttons),
+                ],
+                REPORT_SELECT_CATEGORY: [
+                    CallbackQueryHandler(
+                        self.choose_report_category,
+                        pattern=r"^report-category:",
+                    ),
+                    MessageHandler(text_input, self.use_buttons),
+                ],
+                REPORT_SELECT_PERIOD: [
+                    CallbackQueryHandler(
+                        self.choose_report_period,
+                        pattern=r"^report-period:(today|all|range)$",
+                    ),
+                    MessageHandler(text_input, self.use_buttons),
+                ],
+                REPORT_ENTER_START: [
+                    MessageHandler(text_input, self.receive_report_start_date)
+                ],
+                REPORT_ENTER_END: [
+                    MessageHandler(text_input, self.receive_report_end_date)
                 ],
             },
             fallbacks=command_fallbacks,

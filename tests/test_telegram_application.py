@@ -143,3 +143,72 @@ def test_telegram_application_validates_conversation_values(tmp_path: Path) -> N
         service.validate_amount("0")
     with pytest.raises(ValueError, match="Description cannot be empty"):
         service.validate_description("   ")
+
+
+def test_telegram_category_report_uses_stable_category_identity(
+    tmp_path: Path,
+) -> None:
+    service = build_telegram_service(tmp_path)
+    account = service.application.account_service.add_account("Cash").account
+    food = service.application.category_service.add_category(
+        "Food",
+        "expense",
+    ).category
+    travel = service.application.category_service.add_category(
+        "Travel",
+        "expense",
+    ).category
+    assert account is not None
+    assert food is not None
+    assert travel is not None
+
+    for transaction_date, amount, category, description in (
+        (YESTERDAY, "10", food, "Breakfast"),
+        (TODAY, "25", food, "Lunch"),
+        (TODAY, "50", travel, "Taxi"),
+    ):
+        service.add_transaction(
+            transaction_date=transaction_date,
+            transaction_type="expense",
+            amount=amount,
+            description=description,
+            account_id=account.id,
+            category_id=category.id,
+        )
+
+    renamed = service.application.category_service.rename_category(
+        food.display_id,
+        "Dining",
+    ).category
+    assert renamed is not None
+    deactivated = service.application.category_service.deactivate_category(
+        renamed.display_id
+    ).category
+    assert deactivated is not None
+
+    assert deactivated in service.list_report_categories()
+    assert service.require_report_category(food.id) == deactivated
+    today_report = service.category_report(food.id, transaction_date=TODAY)
+    assert today_report.category == deactivated
+    assert today_report.financial.summary.total_expense == Decimal("25")
+    assert [item.description for item in today_report.financial.transactions] == [
+        "Lunch"
+    ]
+
+    range_report = service.category_report(
+        food.id,
+        start_date=YESTERDAY,
+        end_date=TODAY,
+    )
+    assert range_report.financial.summary.total_expense == Decimal("35")
+    assert range_report.financial.summary.transaction_count == 2
+
+
+def test_telegram_category_report_validates_dates_and_category(tmp_path: Path) -> None:
+    service = build_telegram_service(tmp_path)
+
+    assert service.validate_report_date("2026-08-03") == YESTERDAY
+    with pytest.raises(ValueError, match="cannot be after today"):
+        service.validate_report_date("2026-08-05")
+    with pytest.raises(ValueError, match="no longer available"):
+        service.require_report_category("00000000-0000-4000-8000-000000000099")

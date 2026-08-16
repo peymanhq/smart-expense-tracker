@@ -8,6 +8,11 @@ The format is based on **Keep a Changelog** and follows **Semantic Versioning**.
 
 ## [Unreleased]
 
+### Added
+
+- Authorized Telegram `/category` reports for today, all time, or an inclusive
+  date range, including historical reports for inactive Categories
+
 ---
 
 ## [1.6.0] - 2026-08-15
