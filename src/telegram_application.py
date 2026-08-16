@@ -12,14 +12,24 @@ from report import (
     FinancialSummary,
 )
 from transaction import Transaction
+from transaction_service import DetailedFinancialReport
 from validators import (
     AmountInput,
     validate_amount,
     validate_required_text,
+    validate_transaction_date,
     validate_transaction_type,
 )
 
 TodayProvider = Callable[[], date]
+
+
+@dataclass(frozen=True)
+class TelegramCategoryReport:
+    """One selected Category and a consistent detailed financial snapshot."""
+
+    category: Category
+    financial: DetailedFinancialReport
 
 
 @dataclass(frozen=True)
@@ -44,6 +54,10 @@ class TelegramApplicationService:
             transaction_type=accepted_type,
         )
 
+    def list_report_categories(self) -> list[Category]:
+        """Return active and inactive Categories for historical reporting."""
+        return self.application.category_list()
+
     def require_active_account(self, account_id: str) -> Account:
         account = self.application.account_lookup(account_id)
         if account is None or not account.is_active:
@@ -64,6 +78,22 @@ class TelegramApplicationService:
                 "Selected category is not compatible with the transaction type."
             )
         return category
+
+    def require_report_category(self, category_id: str) -> Category:
+        """Resolve a managed Category without requiring it to remain active."""
+        category = self.application.category_lookup(category_id)
+        if category is None:
+            raise ValueError("Selected category is no longer available.")
+        return category
+
+    def validate_report_date(self, value: str) -> date:
+        """Parse and validate one Telegram report date against today."""
+        parsed = validate_transaction_date(value)
+        accepted = self.application.transaction_service.validate_date_query(
+            transaction_date=parsed,
+        ).transaction_date
+        assert accepted is not None
+        return accepted
 
     def validate_amount(self, value: AmountInput) -> Decimal:
         return validate_amount(value)
@@ -109,3 +139,22 @@ class TelegramApplicationService:
         return self.application.transaction_service.financial_summary(
             transaction_date=accepted_date,
         )
+
+    def category_report(
+        self,
+        category_id: str,
+        *,
+        transaction_date: date | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+    ) -> TelegramCategoryReport:
+        category = self.require_report_category(category_id)
+        financial = (
+            self.application.transaction_service.detailed_financial_report(
+                category_id=category.id,
+                transaction_date=transaction_date,
+                start_date=start_date,
+                end_date=end_date,
+            )
+        )
+        return TelegramCategoryReport(category, financial)

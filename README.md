@@ -36,7 +36,8 @@ in `data/smart_expense_tracker.sqlite3`; generated workbooks default to
 - All-time, daily, range, and UUID-stable Category reports
 - Validated atomic Excel import, export, and template generation
 - Validated SQLite backup and explicitly confirmed offline restore
-- Authorized single-user Telegram add, balance, and daily-summary workflows
+- Authorized single-user Telegram add, balance, daily-summary, and Category-report
+  workflows
 
 ## Telegram bot
 
@@ -49,7 +50,9 @@ expense-tracker-telegram
 ```
 
 The bot uses foreground long polling and supports `/start`, `/help`, `/add`,
-`/cancel`, `/balance`, and `/summary`. Draft conversations remain in memory.
+`/cancel`, `/balance`, `/summary`, and `/category`. Category reports support
+today, all time, or an inclusive date range. Draft conversations remain in
+memory.
 
 ## Backup and restore
 

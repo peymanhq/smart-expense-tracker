@@ -6,7 +6,7 @@
 - Exact Decimal money amounts and managed references
 - SQLite repositories, atomic schema migration, and validated backup/restore
 - Excel import/export/template adapters
-- Single-user Telegram add/balance/summary adapter
+- Single-user Telegram add/balance/summary/Category-report adapter
 - Packaging, coverage, typing, lint, dependency audit, and CI gates
 
 ## Hardening completed after 1.6
