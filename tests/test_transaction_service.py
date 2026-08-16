@@ -91,6 +91,44 @@ def test_future_date_is_rejected_on_add(
     assert captured.value.transaction_date == TODAY + timedelta(days=1)
 
 
+def test_query_and_summary_filter_by_managed_category_uuid(
+    service: TransactionService,
+    repository: SQLiteTransactionRepository,
+) -> None:
+    original = add_expense(service, description="Managed food")
+    managed = repository.replace(
+        original,
+        replace(
+            original,
+            amount="12.50",
+            account_id=ACCOUNT_ID,
+            category_id=CATEGORY_ID,
+        ),
+    )
+    add_expense(service, description="Legacy food without managed IDs")
+
+    page = service.query_transactions(category_id=CATEGORY_ID)
+    summary = service.financial_summary(category_id=CATEGORY_ID)
+    detailed = service.detailed_financial_report(category_id=CATEGORY_ID)
+
+    assert page.items == [managed]
+    assert summary.total_expense == managed.amount
+    assert summary.transaction_count == 1
+    assert detailed.transactions == (managed,)
+    assert detailed.summary == summary
+
+
+@pytest.mark.parametrize("field", ["category_id", "account_id"])
+def test_query_and_summary_reject_noncanonical_managed_uuid(
+    service: TransactionService,
+    field: str,
+) -> None:
+    with pytest.raises(ValueError, match="canonical UUID"):
+        service.query_transactions(**{field: "not-a-uuid"})
+    with pytest.raises(ValueError, match="canonical UUID"):
+        service.financial_summary(**{field: "not-a-uuid"})
+
+
 def test_future_date_is_rejected_when_moving_transaction(
     service: TransactionService,
 ) -> None:

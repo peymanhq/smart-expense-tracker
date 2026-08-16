@@ -4,6 +4,7 @@ from datetime import date
 import pytest
 
 import main
+from category import Category
 from date_policy import validate_date_query
 from report import (
     calculate_financial_summary,
@@ -11,8 +12,12 @@ from report import (
     generate_date_range_summary,
 )
 from transaction import Transaction
+from transaction_repository import TransactionPage
+from transaction_service import DetailedFinancialReport
 
 TODAY = date(2026, 7, 25)
+CATEGORY_ID = "123e4567-e89b-12d3-a456-426614174001"
+OTHER_CATEGORY_ID = "123e4567-e89b-12d3-a456-426614174002"
 
 
 def make_transaction(
@@ -20,16 +25,20 @@ def make_transaction(
     transaction_type: str,
     amount: float,
     transaction_date: date,
+    *,
+    category: str = "General",
+    category_id: str | None = None,
 ) -> Transaction:
     return Transaction(
         id=f"uuid-{display_number}",
         display_id=f"T-{display_number:04d}",
         type=transaction_type,
         amount=amount,
-        category="General",
+        category=category,
         account="Cash",
         description="",
         transaction_date=transaction_date,
+        category_id=category_id,
     )
 
 
@@ -54,17 +63,68 @@ class ReportService:
         transaction_date=None,
         start_date=None,
         end_date=None,
+        category_id=None,
+        account_id=None,
     ):
         self.list_calls += 1
+        selected = [
+            transaction
+            for transaction in self.transactions
+            if (category_id is None or transaction.category_id == category_id)
+            and (account_id is None or transaction.account_id == account_id)
+        ]
         if transaction_date is not None:
-            return generate_daily_summary(self.transactions, transaction_date)
+            return generate_daily_summary(selected, transaction_date)
         if start_date is not None or end_date is not None:
             return generate_date_range_summary(
-                self.transactions,
+                selected,
                 start_date,
                 end_date,
             )
-        return calculate_financial_summary(self.transactions)
+        return calculate_financial_summary(selected)
+
+    def query_transactions(
+        self,
+        *,
+        transaction_date=None,
+        start_date=None,
+        end_date=None,
+        category_id=None,
+        account_id=None,
+        **_criteria,
+    ):
+        selected = [
+            transaction
+            for transaction in self.transactions
+            if (category_id is None or transaction.category_id == category_id)
+            and (account_id is None or transaction.account_id == account_id)
+        ]
+        if transaction_date is not None:
+            selected = [
+                transaction
+                for transaction in selected
+                if transaction.transaction_date == transaction_date
+            ]
+        if start_date is not None:
+            selected = [
+                transaction
+                for transaction in selected
+                if transaction.transaction_date >= start_date
+            ]
+        if end_date is not None:
+            selected = [
+                transaction
+                for transaction in selected
+                if transaction.transaction_date <= end_date
+            ]
+        return TransactionPage(selected, len(selected), None, 0)
+
+    def detailed_financial_report(self, **criteria):
+        transactions = tuple(self.query_transactions(**criteria).items)
+        return DetailedFinancialReport(
+            calculate_financial_summary(transactions),
+            transactions,
+        )
 
 
 def set_inputs(monkeypatch, values):
@@ -226,6 +286,105 @@ def test_report_menu_dispatches_daily_report(monkeypatch) -> None:
         called_with = received_service
 
     monkeypatch.setattr(main, "handle_daily_report", fake_daily)
+
+    main.financial_report_menu(service)
+
+    assert called_with is service
+
+
+def test_category_report_uses_uuid_for_renamed_inactive_category(
+    monkeypatch,
+    capsys,
+) -> None:
+    matching = make_transaction(
+        1,
+        "expense",
+        42.5,
+        date(2026, 7, 20),
+        category="Food",
+        category_id=CATEGORY_ID,
+    )
+    wrong_category = make_transaction(
+        2,
+        "expense",
+        99,
+        date(2026, 7, 20),
+        category="Food",
+        category_id=OTHER_CATEGORY_ID,
+    )
+    renamed = Category(
+        CATEGORY_ID,
+        "C-0004",
+        "Dining",
+        "expense",
+        is_active=False,
+    )
+    set_inputs(
+        monkeypatch,
+        ["C-0004", "3", "2026-07-01", "2026-07-25"],
+    )
+
+    main.handle_category_report(
+        ReportService([matching, wrong_category]),
+        category_list=lambda: [renamed],
+        category_display_lookup=lambda display_id: (
+            renamed if display_id.strip().upper() == "C-0004" else None
+        ),
+    )
+
+    output = capsys.readouterr().out
+    assert "Category Report: Dining (C-0004)" in output
+    assert "Type: Expense" in output
+    assert "Status: Inactive" in output
+    assert "Period: 2026-07-01 to 2026-07-25" in output
+    assert "Total Expense: 42.50" in output
+    assert "Transaction Count: 1" in output
+    assert "T-0001" in output
+    assert "T-0002" not in output
+
+
+def test_income_category_report_supports_all_time_period(
+    monkeypatch,
+    capsys,
+) -> None:
+    income = Category(
+        CATEGORY_ID,
+        "C-0001",
+        "Salary",
+        "income",
+    )
+    transaction = make_transaction(
+        1,
+        "income",
+        125,
+        date(2026, 7, 20),
+        category="Old salary name",
+        category_id=CATEGORY_ID,
+    )
+    set_inputs(monkeypatch, ["C-0001", "1"])
+
+    main.handle_category_report(
+        ReportService([transaction]),
+        category_list=lambda: [income],
+        category_display_lookup=lambda _display_id: income,
+    )
+
+    output = capsys.readouterr().out
+    assert "Period: All time" in output
+    assert "Total Income: 125.00" in output
+    assert "Transaction Count: 1" in output
+
+
+def test_report_menu_dispatches_category_report(monkeypatch) -> None:
+    called_with = None
+    service = ReportService([])
+    set_inputs(monkeypatch, ["4"])
+
+    def fake_category_report(received_service):
+        nonlocal called_with
+        called_with = received_service
+
+    monkeypatch.setattr(main, "handle_category_report", fake_category_report)
 
     main.financial_report_menu(service)
 

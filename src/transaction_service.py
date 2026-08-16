@@ -13,7 +13,7 @@ from date_policy import (
     ValidatedDateQuery,
     validate_date_query,
 )
-from report import FinancialSummary
+from report import FinancialSummary, calculate_financial_summary
 from transaction import Transaction
 from transaction_factory import create_transaction
 from transaction_repository import (
@@ -48,6 +48,14 @@ class TransactionCreateRequest:
     description: str
     account_id: str
     category_id: str
+
+
+@dataclass(frozen=True)
+class DetailedFinancialReport:
+    """Summary and contributing records from one repository query snapshot."""
+
+    summary: FinancialSummary
+    transactions: tuple[Transaction, ...]
 
 
 class _ReferenceNotSupplied:
@@ -422,7 +430,9 @@ class TransactionService:
         *,
         transaction_type: str | None = None,
         category: str | None = None,
+        category_id: str | None = None,
         account: str | None = None,
+        account_id: str | None = None,
         description: str | None = None,
         text_query: str | None = None,
         transaction_date: date | None = None,
@@ -442,11 +452,15 @@ class TransactionService:
             if transaction_type is None
             else validate_transaction_type(transaction_type)
         )
+        accepted_category_id = validate_optional_uuid(category_id, "Category ID")
+        accepted_account_id = validate_optional_uuid(account_id, "Account ID")
         return self._repository.query(
             TransactionQuery(
                 transaction_type=accepted_type,
                 category=category,
+                category_id=accepted_category_id,
                 account=account,
+                account_id=accepted_account_id,
                 description=description,
                 text_query=text_query,
                 transaction_date=dates.transaction_date,
@@ -463,6 +477,8 @@ class TransactionService:
         transaction_date: date | None = None,
         start_date: date | None = None,
         end_date: date | None = None,
+        category_id: str | None = None,
+        account_id: str | None = None,
     ) -> FinancialSummary:
         """Aggregate a validated financial period in the repository."""
         dates = self.validate_date_query(
@@ -470,12 +486,39 @@ class TransactionService:
             start_date=start_date,
             end_date=end_date,
         )
+        accepted_category_id = validate_optional_uuid(category_id, "Category ID")
+        accepted_account_id = validate_optional_uuid(account_id, "Account ID")
         return self._repository.summarize(
             TransactionQuery(
                 transaction_date=dates.transaction_date,
                 start_date=dates.start_date,
                 end_date=dates.end_date,
+                category_id=accepted_category_id,
+                account_id=accepted_account_id,
             )
+        )
+
+    def detailed_financial_report(
+        self,
+        *,
+        transaction_date: date | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        category_id: str | None = None,
+        account_id: str | None = None,
+    ) -> DetailedFinancialReport:
+        """Return consistent totals and rows for a detailed selected report."""
+        page = self.query_transactions(
+            transaction_date=transaction_date,
+            start_date=start_date,
+            end_date=end_date,
+            category_id=category_id,
+            account_id=account_id,
+        )
+        transactions = tuple(page.items)
+        return DetailedFinancialReport(
+            summary=calculate_financial_summary(transactions),
+            transactions=transactions,
         )
 
     def update_transaction(

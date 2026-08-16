@@ -30,6 +30,8 @@ class TransactionQuery:
     end_date: date | None = None
     limit: int | None = None
     offset: int = 0
+    category_id: str | None = None
+    account_id: str | None = None
 
 
 @dataclass(frozen=True)

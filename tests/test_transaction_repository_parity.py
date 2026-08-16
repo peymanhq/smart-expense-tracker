@@ -138,13 +138,26 @@ def test_query_port_filters_paginates_and_summarizes_exact_decimals(
             candidate("query-3", transaction_date=PAST, amount=Decimal("5"), account_id=account_id, category_id=category_id),
         ]
     )
+    repository.create(
+        candidate(
+            "query-unmanaged",
+            amount=Decimal("99"),
+            description="Unmanaged",
+        )
+    )
 
     page = repository.query(TransactionQuery(text_query="café", limit=1, offset=1))
-    summary = repository.summarize(TransactionQuery(transaction_date=TODAY))
+    category_page = repository.query(TransactionQuery(category_id=category_id))
+    account_page = repository.query(TransactionQuery(account_id=account_id))
+    summary = repository.summarize(
+        TransactionQuery(transaction_date=TODAY, category_id=category_id)
+    )
 
     assert page.total_count == 2
     assert len(page.items) == 1
     assert page.items[0].description == "CAFÉ dinner"
+    assert category_page.total_count == 3
+    assert account_page.total_count == 3
     assert summary.total_expense == Decimal("0.3")
     assert summary.balance == Decimal("-0.3")
     assert summary.transaction_count == 2

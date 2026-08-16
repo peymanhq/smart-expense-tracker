@@ -46,6 +46,14 @@ def _query_parts(criteria: TransactionQuery) -> tuple[str, list[object]]:
         if value is not None:
             clauses.append(f"CASEFOLD({column}) = ?")
             parameters.append(value.casefold())
+    exact_ids = {
+        "category_id": criteria.category_id,
+        "account_id": criteria.account_id,
+    }
+    for column, value in exact_ids.items():
+        if value is not None:
+            clauses.append(f"{column} = ?")
+            parameters.append(value)
     if criteria.description is not None:
         clauses.append("instr(CASEFOLD(description), ?) > 0")
         parameters.append(criteria.description.casefold())

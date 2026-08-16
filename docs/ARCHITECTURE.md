@@ -58,6 +58,8 @@ caller provides the expected model and a stale mutation is rejected.
 - Amounts are positive `Decimal` values; type determines income or expense.
 - Account and Category UUIDs are authoritative managed references.
 - Stored names are historical snapshots and fallbacks.
+- Category reports filter by managed UUID, so rename and deactivation preserve
+  historical reporting continuity.
 - Deactivation preserves historical references; deletion is restricted.
 
 ## Operational boundary
